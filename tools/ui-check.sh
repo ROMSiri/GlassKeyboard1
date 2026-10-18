@@ -23,6 +23,10 @@ done
 adb shell settings get secure default_input_method >> $S/start.txt
 
 open punctuation; sleep 3
+# force-stopping our package (open -S) resets the current IME, so select it again now
+adb shell ime enable $IME >> $S/start.txt 2>&1; adb shell ime set $IME >> $S/start.txt 2>&1
+adb shell settings get secure default_input_method >> $S/start.txt
+sleep 2
 adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
 adb pull /sdcard/ui.xml $S/ui.xml > /dev/null 2>&1
 XY=$(python3 - "$S/ui.xml" <<'PY'
