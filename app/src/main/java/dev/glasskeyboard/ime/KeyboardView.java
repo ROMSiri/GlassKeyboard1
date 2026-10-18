@@ -45,7 +45,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     static final int SHIFT_OFF = 0, SHIFT_ONCE = 1, SHIFT_LOCK = 2;
 
     private static final int TOOL_SETTINGS = 1, TOOL_PASTE = 2, TOOL_LEFT = 3, TOOL_RIGHT = 4, TOOL_HIDE = 5;
-    private static final long LONG_PRESS_MS = 380, DELETE_DELAY_MS = 400, DELETE_REPEAT_MS = 55,
+    private static final long LONG_PRESS_MS = 300, DELETE_DELAY_MS = 400, DELETE_REPEAT_MS = 55,
             RELEASE_FADE_MS = 160, DOUBLE_SHIFT_MS = 320;
 
     /** A laid-out key or toolbar button. */

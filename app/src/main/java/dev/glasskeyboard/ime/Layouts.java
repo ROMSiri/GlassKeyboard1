@@ -85,17 +85,30 @@ final class Layouts {
         };
     }
 
+    /**
+     * 26 letters like QWERTY (9 / 9 / 8). The seven rarest letters live under a neighbour:
+     * long-press shows them, the small hint in the key corner says which.
+     *   ё э → е,  ю → у,  щ → ш,  ф → в,  ц → ч,  ъ → ь
+     */
     static Layout russian() {
-        Key[] r1 = chars("йцукенгшщзх", "1234 67890");
-        r1[4] = ch("е", "ё5");
-        r1[10] = ch("х", "ъ");
-        Key[] r3 = chars("ячсмитьбю", null);
-        r3[6] = ch("ь", "ъ");
+        float wide = 10f / 9f; // rows of nine keys fill the full width
         return new Layout("ru")
-                .row(r1)
-                .row(chars("фывапролджэ", null))
-                .row(concat(prepend(fn("", SHIFT, 1.25f), r3), fn("", DELETE, 1.25f)))
-                .row(bottomRow("?123", SYMBOLS, 1.15f));
+                .row(w(wide, ch("й", "1"), ch("у", "ю2"), ch("к", "3"), ch("е", "ёэ4"), ch("н", "5"),
+                        ch("г", "6"), ch("ш", "щ7"), ch("з", "8"), ch("х", "90")))
+                .row(w(wide, ch("ы"), ch("в", "ф"), ch("а"), ch("п"), ch("р"), ch("о"), ch("л"),
+                        ch("д"), ch("ж")))
+                .row(fn("", SHIFT, 1f), ch("я"), ch("ч", "ц"), ch("с"), ch("м"), ch("и"), ch("т"),
+                        ch("ь", "ъ"), ch("б"), fn("", DELETE, 1f))
+                .row(bottomRow("?123", SYMBOLS, 1f));
+    }
+
+    private static Key[] w(float weight, Key... keys) {
+        Key[] out = new Key[keys.length];
+        for (int i = 0; i < keys.length; i++) {
+            Key k = keys[i];
+            out[i] = new Key(k.label, k.code, k.alts, weight, k.kind);
+        }
+        return out;
     }
 
     static Layout english() {
