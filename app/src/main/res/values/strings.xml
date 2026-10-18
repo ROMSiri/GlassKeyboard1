@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Glass Keyboard</string>
+    <string name="ime_name">Glass Keyboard</string>
+    <string name="subtype_ru">Русский</string>
+    <string name="subtype_en">English</string>
+    <string name="settings_about">Клавиатура с эффектами материала ColorOS 17: размытая панель со скруглёнными углами, стеклянные клавиши с внутренним свечением и градиентной кромкой, круглые кнопки панели инструментов.</string>
+    <string name="status_disabled">Шаг 1: включите клавиатуру в системных настройках.</string>
+    <string name="status_enabled">Шаг 2: выберите Glass Keyboard как текущую клавиатуру.</string>
+    <string name="status_ready">✓ Клавиатура включена и выбрана.</string>
+    <string name="step_enable">1. Включить в настройках</string>
+    <string name="step_choose">2. Выбрать клавиатуру</string>
+    <string name="settings_options">Параметры</string>
+    <string name="opt_blur">Размытие фона</string>
+    <string name="opt_preview">Всплывающая подсказка при нажатии</string>
+    <string name="opt_vibrate">Вибрация</string>
+    <string name="opt_sound">Звук нажатий</string>
+    <string name="opt_auto_caps">Заглавная в начале предложения</string>
+    <string name="opt_double_space">Двойной пробел — точка</string>
+    <string name="blur_note">На ColorOS используется системный материал (как у клавиатуры Xiaobu). На Android 12+ — размытие окна, если устройство его поддерживает и оно не отключено (энергосбережение, параметр разработчика «Размытие на уровне окна»). Иначе панель рисуется почти непрозрачной.</string>
+    <string name="test_hint">Попробуйте клавиатуру здесь</string>
+</resources>

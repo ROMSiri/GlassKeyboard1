@@ -1,0 +1,76 @@
+// Glass key material in the spirit of ColorOS 17 (NEW_G2 key style):
+//  * smooth superellipse corners (G2 continuity when uExponent > 2),
+//  * translucent fill,
+//  * soft inner light that gathers at the bottom edge (offset + enlarged fade shape),
+//  * thin gradient rim that is brightest along the light axis (top-left / bottom-right).
+// Coordinates are local to the drawn rect: (0,0) is top-left, y goes down.
+
+uniform float2 uSize;        // rect size, px
+uniform float  uRadius;      // corner radius, px
+uniform float  uExponent;    // 2 = circular corners, 3..4 = squircle (G2)
+uniform float4 uFill;        // straight-alpha fill color
+uniform float4 uGlow;        // rgb + strength of the inner light
+uniform float  uGlowWidth;   // px, how deep the inner light reaches
+uniform float2 uGlowOffset;  // px, shifts the fade shape (negative y = light at bottom)
+uniform float2 uGlowScale;   // >1 enlarges the fade shape, weakening the light on far sides
+uniform float4 uEdge;        // rgb + strength of the rim
+uniform float  uEdgeWidth;   // px, rim thickness
+uniform float2 uLight;       // normalized light direction (y down), e.g. (-0.6,-0.8)
+uniform float  uEdgeFloor;   // rim strength away from the light axis, 0..1
+
+float lpCorner(float2 m, float n) {
+    float mx = max(m.x, m.y);
+    if (mx < 1e-4) return 0.0;
+    float2 u = m / mx;
+    return mx * pow(pow(u.x, n) + pow(u.y, n), 1.0 / n);
+}
+
+float sdShape(float2 p, float2 b, float r, float n) {
+    float2 q = abs(p) - b + float2(r);
+    float2 m = max(q, float2(0.0));
+    float c = n <= 2.001 ? length(m) : lpCorner(m, n);
+    return c + min(max(q.x, q.y), 0.0) - r;
+}
+
+float hash(float2 p) {
+    return fract(sin(dot(p.yx, float2(79.1214, 78.233))) * 43760.5453);
+}
+
+half4 main(float2 fragCoord) {
+    float2 b = uSize * 0.5;
+    float2 p = fragCoord - b;
+    float r = min(uRadius, min(b.x, b.y));
+    float d = sdShape(p, b, r, uExponent);
+    float cover = 1.0 - smoothstep(-0.75, 0.75, d);
+    if (cover <= 0.0) return half4(0.0);
+
+    // Fill (premultiplied).
+    float4 col = float4(uFill.rgb * uFill.a, uFill.a);
+
+    // Inner light: distance to an offset, enlarged copy of the shape.
+    if (uGlow.a > 0.001) {
+        float2 gb = b * uGlowScale;
+        float gr = min(r * max(uGlowScale.x, uGlowScale.y), min(gb.x, gb.y));
+        float dg = sdShape(p - uGlowOffset, gb, gr, uExponent);
+        float g = smoothstep(-uGlowWidth, 0.0, dg);
+        g = g * g * (3.0 - 2.0 * g);
+        // Tiny dither keeps the wide gradient from banding.
+        g = clamp(g + (hash(fragCoord * 0.013) - 0.5) * 0.012, 0.0, 1.0);
+        float ga = uGlow.a * g;
+        col = col * (1.0 - ga) + float4(uGlow.rgb * ga, ga);
+    }
+
+    // Rim: band hugging the outline, modulated by the angle to the light.
+    if (uEdge.a > 0.001) {
+        float band = 1.0 - smoothstep(0.0, uEdgeWidth, -d);
+        band *= band;
+        float2 nrm = normalize(p / max(b, float2(1.0)) + float2(1e-5, 1e-5));
+        float lit = dot(nrm, uLight);
+        float near = pow(max(lit, 0.0), 1.4);
+        float far = 0.8 * pow(max(-lit, 0.0), 1.4);
+        float ea = uEdge.a * band * mix(uEdgeFloor, 1.0, max(near, far));
+        col = col * (1.0 - ea) + float4(uEdge.rgb * ea, ea);
+    }
+
+    return half4(col * cover);
+}
