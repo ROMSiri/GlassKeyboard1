@@ -89,7 +89,7 @@ public final class SettingsActivity extends Activity {
         divider = dark ? 0x22ffffff : 0x14000000;
 
         scroll = new ScrollView(this);
-        scroll.setClipToPadding(false);
+        scroll.setClipToPadding(true); // content scrolls under nothing: clipped below the status bar
         scroll.setFillViewport(true);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
