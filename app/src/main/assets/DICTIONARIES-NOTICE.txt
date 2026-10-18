@@ -1,0 +1,4 @@
+Word lists dict_ru / dict_en / bigrams_en were generated with tools/dicttool from the
+main_ru.dict and main_en-US.dict binary dictionaries shipped with FrostKeys / HeliBoard,
+which come from the Android Open Source Project dictionaries (Helium314/aosp-dictionaries).
+AOSP dictionaries are distributed under the Apache License, Version 2.0.

@@ -29,6 +29,6 @@ def build(src, lang, out):
 
 out = sys.argv[1]
 os.makedirs(out, exist_ok=True)
-D = '/home/claude/fk/FrostKeys-main/app/src/main/assets/dicts'
+D = sys.argv[2] if len(sys.argv) > 2 else 'dicts'  # folder with main_ru.dict and main_en-US.dict
 build(f'{D}/main_ru.dict', 'ru', out)
 build(f'{D}/main_en-US.dict', 'en', out)
