@@ -212,7 +212,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         suggestions = next;
         literalSlot = literal;
         boldCenter = autocorrect;
-        if (next == null || !wasShown) expanded = false;
+        if (next != null && !wasShown) expanded = false; // typing closes the "⋯" menu
         if (next != null && slotCells.length != next.length) layoutStrip();
         invalidate();
     }
@@ -331,8 +331,9 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
         boolean expandable = Prefs.MODE_EXPANDABLE.equals(mode);
         if (expandable) {
-            toggleCell.rect.set(l, cy - size / 2f, l + size, cy + size / 2f);
-            l += size + gap;
+            // "⋯" opens / closes the toolbar keys
+            toggleCell.rect.set(r - size, cy - size / 2f, r, cy + size / 2f);
+            r -= size + gap;
         }
         resizeDone.rect.set(r - 96 * dp, cy - size / 2f, r, cy + size / 2f);
         resizeMinus.rect.set(sidePad + 4 * dp, cy - size / 2f, sidePad + 4 * dp + size, cy + size / 2f);
@@ -359,23 +360,23 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             slotCells = new Cell[n];
             for (int i = 0; i < n; i++) slotCells[i] = new Cell(null, CELL_SLOT + i, null);
         }
-        float sl = l - (expandable ? 2 * dp : 0), sr = pinnedCells.isEmpty() ? r : pr + gap / 2f;
+        float sl = l, sr = pinnedCells.isEmpty() ? r : pr + gap / 2f;
         float slotW = (sr - sl) / n;
         for (int i = 0; i < n; i++)
             slotCells[i].rect.set(sl + i * slotW + 2 * dp, cy - 18 * dp, sl + (i + 1) * slotW - 2 * dp, cy + 18 * dp);
 
         // scrollable toolbar keys
         toolCells.clear();
-        toolAreaL = l;
+        toolAreaL = sidePad + 4 * dp;
         toolAreaR = r;
-        float x = l;
+        float x = toolAreaL;
         for (ToolKey k : ToolKey.parse(prefs.toolbarKeys(), true)) {
             Cell c = new Cell(null, CELL_TOOL + k.ordinal(), k);
             c.rect.set(x, cy - size / 2f, x + size, cy + size / 2f);
             toolCells.add(c);
             x += size + gap;
         }
-        toolContentW = x - gap - l;
+        toolContentW = x - gap - toolAreaL;
         // without scrolling, spread the keys over the full width
         float avail = toolAreaR - toolAreaL;
         if (toolContentW < avail && toolCells.size() > 1) {
@@ -396,14 +397,14 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         if (toolbarH == 0 || resizeMode) return false;
         if (Prefs.MODE_KEYS.equals(mode)) return false;
         if (Prefs.MODE_STRIP.equals(mode)) return true;
-        return suggestions != null && !expanded;
+        return !expanded;   // EXPANDABLE: suggestions (or empty) until "⋯" is tapped
     }
 
     private boolean showToolRow() {
         if (toolbarH == 0 || resizeMode) return false;
         if (Prefs.MODE_KEYS.equals(mode)) return true;
         if (Prefs.MODE_STRIP.equals(mode)) return false;
-        return suggestions == null || expanded;
+        return expanded;
     }
 
     // ------------------------------------------------------------------ drawing
@@ -508,19 +509,14 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     private boolean drawToggle(Canvas canvas, long now) {
         Cell t = toggleCell;
         float p = pressAmount(t, now);
-        if (p > 0f) {
+        if (expanded || p > 0f) {
             scaled(t.rect, 1f - .06f * p);
-            painter.draw(canvas, tmp, tmp.width() / 2f, dark ? 0x3dffffff : 0x85bbbec2, painter.round, p);
+            int fill = expanded ? (accent & 0x00ffffff) | 0x33000000 : (dark ? 0x3dffffff : 0x85bbbec2);
+            painter.draw(canvas, tmp, tmp.width() / 2f, fill, painter.round, expanded ? 1f : p);
         }
-        icon.setColor(withAlpha(fg(), .75f));
-        float cx = t.rect.centerX(), cy = t.rect.centerY(), u = dp;
-        path.reset();
-        boolean open = showToolRow() && suggestions != null;
-        float d = open ? -1 : 1;
-        path.moveTo(cx - d * 2.5f * u, cy - 6 * u);
-        path.lineTo(cx + d * 3.5f * u, cy);
-        path.lineTo(cx - d * 2.5f * u, cy + 6 * u);
-        canvas.drawPath(path, icon);
+        panelPaint.setColor(expanded ? accent : withAlpha(fg(), .7f));
+        float cx = t.rect.centerX(), cy = t.rect.centerY();
+        for (int i = -1; i <= 1; i++) canvas.drawCircle(cx + i * 5.5f * dp, cy, 2 * dp, panelPaint);
         return t.pressed || t.upAt != 0;
     }
 
