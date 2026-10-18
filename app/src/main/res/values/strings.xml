@@ -16,6 +16,13 @@
     <string name="opt_auto_caps">Заглавная в начале предложения</string>
     <string name="opt_double_space">Двойной пробел — точка</string>
     <string name="blur_note">На ColorOS используется системный материал (как у клавиатуры Xiaobu). На Android 12+ — размытие окна, если устройство его поддерживает и оно не отключено (энергосбережение, параметр разработчика «Размытие на уровне окна»). Иначе панель рисуется почти непрозрачной.</string>
+    <string name="settings_words">Подсказки слов</string>
+    <string name="opt_suggestions">Показывать подсказки</string>
+    <string name="opt_autocorrect">Автоисправление при пробеле (⌫ сразу после — отменить)</string>
+    <string name="opt_predictions">Предлагать следующее слово</string>
+    <string name="opt_learn">Запоминать мои слова</string>
+    <string name="forget_words">Забыть выученные слова</string>
+    <string name="forget_words_done">Выученные слова удалены</string>
     <string name="opt_opacity">Плотность панели</string>
     <string name="opt_bottom">Отступ снизу</string>
     <string name="blur_status">Режим размытия: %1$s</string>

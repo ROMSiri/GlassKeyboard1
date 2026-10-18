@@ -7,7 +7,8 @@ import android.content.SharedPreferences;
 final class Prefs {
     static final String VIBRATE = "vibrate", SOUND = "sound", PREVIEW = "preview", BLUR = "blur",
             AUTO_CAPS = "auto_caps", DOUBLE_SPACE = "double_space", LANGUAGE = "language",
-            OPACITY = "panel_opacity", BOTTOM_OFFSET = "bottom_offset", BLUR_STATUS = "blur_status";
+            OPACITY = "panel_opacity", SUGGESTIONS = "suggestions", AUTOCORRECT = "autocorrect",
+            PREDICTIONS = "predictions", LEARN = "learn_words", BOTTOM_OFFSET = "bottom_offset", BLUR_STATUS = "blur_status";
 
     final SharedPreferences sp;
 
@@ -21,6 +22,10 @@ final class Prefs {
     boolean blur() { return sp.getBoolean(BLUR, true); }
     boolean autoCaps() { return sp.getBoolean(AUTO_CAPS, true); }
     boolean doubleSpace() { return sp.getBoolean(DOUBLE_SPACE, true); }
+    boolean suggestions() { return sp.getBoolean(SUGGESTIONS, true); }
+    boolean autocorrect() { return sp.getBoolean(AUTOCORRECT, true); }
+    boolean predictions() { return sp.getBoolean(PREDICTIONS, true); }
+    boolean learnWords() { return sp.getBoolean(LEARN, true); }
     String language() { return sp.getString(LANGUAGE, "ru"); }
     /** Panel tint opacity, percent (ColorOS default is 80). */
     int opacity() { return sp.getInt(OPACITY, 90); }

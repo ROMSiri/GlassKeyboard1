@@ -74,6 +74,27 @@ public final class SettingsActivity extends Activity {
         addSwitch(root, R.string.opt_vibrate, Prefs.VIBRATE, true);
         addSwitch(root, R.string.opt_sound, Prefs.SOUND, false);
         addSwitch(root, R.string.opt_auto_caps, Prefs.AUTO_CAPS, true);
+
+        TextView words = new TextView(this);
+        words.setText(R.string.settings_words);
+        words.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        words.setAllCaps(true);
+        words.setPadding(0, dp(24), 0, dp(4));
+        root.addView(words);
+        addSwitch(root, R.string.opt_suggestions, Prefs.SUGGESTIONS, true);
+        addSwitch(root, R.string.opt_autocorrect, Prefs.AUTOCORRECT, true);
+        addSwitch(root, R.string.opt_predictions, Prefs.PREDICTIONS, true);
+        addSwitch(root, R.string.opt_learn, Prefs.LEARN, true);
+        Button forget = new Button(this);
+        forget.setText(R.string.forget_words);
+        forget.setOnClickListener(v -> {
+            for (String lang : new String[]{"ru", "en"}) {
+                //noinspection ResultOfMethodCallIgnored
+                new java.io.File(getFilesDir(), "user_words_" + lang + ".txt").delete();
+            }
+            forget.setText(R.string.forget_words_done);
+        });
+        root.addView(forget, matchWrap());
         addSwitch(root, R.string.opt_double_space, Prefs.DOUBLE_SPACE, true);
 
         addSlider(root, R.string.opt_opacity, Prefs.OPACITY, prefs.opacity(), 50, 100, "%");

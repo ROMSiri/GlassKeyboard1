@@ -40,6 +40,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         void onSettings();
         void onLanguageChanged(String lang);
         void onPickInputMethod();
+        void onSuggestion(int slot);
     }
 
     static final int SHIFT_OFF = 0, SHIFT_ONCE = 1, SHIFT_LOCK = 2;
@@ -80,6 +81,12 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
     private final List<Cell> keys = new ArrayList<>();
     private final List<Cell> tools = new ArrayList<>();
+    private static final int TOOL_SUGGESTION = 100; // + slot index
+    private final Cell[] slotCells = {new Cell(null, TOOL_SUGGESTION), new Cell(null, TOOL_SUGGESTION + 1),
+            new Cell(null, TOOL_SUGGESTION + 2)};
+    private String[] suggestions;      // null: show the toolbar
+    private int literalSlot = -1;
+    private boolean boldCenter;
     private final SparseArray<Finger> fingers = new SparseArray<>();
 
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -147,6 +154,17 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     // ------------------------------------------------------------------ public API
 
     float panelRadiusPx() { return panelRadius; }
+    String language() { return lang; }
+
+    /** Word suggestions in place of the toolbar; null brings the toolbar back. */
+    void setSuggestions(String[] slots, int literal, boolean autocorrect) {
+        boolean any = false;
+        if (slots != null) for (String s : slots) any |= s != null;
+        suggestions = any ? slots.clone() : null;
+        literalSlot = literal;
+        boldCenter = autocorrect;
+        invalidate();
+    }
     boolean isDark() { return dark; }
 
     void setEnterAction(int action) {
@@ -244,6 +262,11 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             }
             t.rect.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
         }
+        float slotW = (w - 2 * sidePad) / 3f;
+        for (int i = 0; i < 3; i++) {
+            float l = sidePad + i * slotW;
+            slotCells[i].rect.set(l + 3 * dp, cy - 18 * dp, l + slotW - 3 * dp, cy + 18 * dp);
+        }
         invalidate();
     }
 
@@ -257,7 +280,8 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
         drawPanel(canvas, w, h);
 
-        for (Cell t : tools) animating |= drawTool(canvas, t, now);
+        if (suggestions != null) animating |= drawSuggestions(canvas, now);
+        else for (Cell t : tools) animating |= drawTool(canvas, t, now);
         for (Cell c : keys) animating |= drawKey(canvas, c, now);
 
         Finger top = topFinger();
@@ -289,6 +313,47 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         float t = 1f - (now - c.upAt) / (float) RELEASE_FADE_MS;
         if (t <= 0f) { c.upAt = 0; return 0f; }
         return t * t;
+    }
+
+    private boolean drawSuggestions(Canvas canvas, long now) {
+        boolean animating = false;
+        int fg = dark ? 0xfff2f2f2 : 0xff1d1d1f;
+        for (int i = 0; i < 3; i++) {
+            Cell c = slotCells[i];
+            String s = suggestions[i];
+            float p = pressAmount(c, now);
+            animating |= c.pressed || c.upAt != 0;
+            if (s == null) continue;
+            if (p > 0f) {
+                scaled(c.rect, 1f - .04f * p);
+                painter.draw(canvas, tmp, tmp.height() / 2f,
+                        dark ? 0x3dffffff : 0x85ffffff, painter.round, p);
+            }
+            boolean bold = i == 1 && (boldCenter || literalSlot != 1);
+            text.setTypeface(Typeface.create("sans-serif", bold && boldCenter ? Typeface.BOLD : Typeface.NORMAL));
+            text.setTextSize(sp(16));
+            text.setColor(i == literalSlot ? withAlpha(fg, .6f) : fg);
+            String label = i == literalSlot ? "«" + s + "»" : s;
+            drawCentered(canvas, fit(label, c.rect.width() - 8 * dp), c.rect.centerX(), c.rect.centerY());
+        }
+        text.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        // thin dividers between filled slots
+        panelPaint.setColor(withAlpha(fg, .18f));
+        for (int i = 1; i < 3; i++) {
+            if (suggestions[i - 1] == null || suggestions[i] == null) continue;
+            float x = (slotCells[i - 1].rect.right + slotCells[i].rect.left) / 2f;
+            canvas.drawRect(x - dp * .5f, slotCells[i].rect.centerY() - 9 * dp,
+                    x + dp * .5f, slotCells[i].rect.centerY() + 9 * dp, panelPaint);
+        }
+        return animating;
+    }
+
+    /** Ellipsizes {@code s} to {@code width} with the current text paint. */
+    private String fit(String s, float width) {
+        if (text.measureText(s) <= width) return s;
+        int end = s.length();
+        while (end > 1 && text.measureText(s, 0, end) + text.measureText("…") > width) end--;
+        return s.substring(0, end) + "…";
     }
 
     private boolean drawTool(Canvas canvas, Cell t, long now) {
@@ -724,6 +789,8 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             case TOOL_LEFT: actions.onCursor(-1); break;
             case TOOL_RIGHT: actions.onCursor(1); break;
             case TOOL_HIDE: actions.onHide(); break;
+            case TOOL_SUGGESTION: case TOOL_SUGGESTION + 1: case TOOL_SUGGESTION + 2:
+                actions.onSuggestion(tool - TOOL_SUGGESTION); break;
             default: break;
         }
     }
@@ -774,7 +841,12 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
     /** Toolbar hit test first, then nearest key in the touched row (gaps and margins included). */
     private Cell hit(float x, float y) {
-        if (y < topPad + toolbarH) {
+        if (y < topPad + toolbarH && suggestions != null) {
+            int i = (int) Math.floor((x - sidePad) / ((getWidth() - 2 * sidePad) / 3f));
+            i = Math.max(0, Math.min(2, i));
+            if (suggestions[i] != null) return slotCells[i];
+            if (y < topPad + toolbarH - 4 * dp) return null;
+        } else if (y < topPad + toolbarH) {
             Cell best = null;
             float bestD = 10 * dp;
             for (Cell t : tools) {
