@@ -21,7 +21,12 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
     @Override public void onCreate() {
         super.onCreate();
         prefs = new Prefs(this);
-        blur = new PanelBlur(mode -> { if (view != null) view.onBlurModeChanged(mode); });
+        blur = new PanelBlur((mode, detail) -> {
+            String name = mode == PanelBlur.Mode.OPLUS ? "системный материал ColorOS"
+                    : mode == PanelBlur.Mode.WINDOW ? "размытие окна Android" : "без размытия";
+            prefs.setBlurStatus(detail == null || detail.isEmpty() ? name : name + " (" + detail + ")");
+            if (view != null) view.onBlurModeChanged(mode, detail);
+        });
     }
 
     @Override public View onCreateInputView() {
@@ -38,8 +43,10 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
         if (view == null || getWindow() == null) return;
         Window window = getWindow().getWindow();
         if (window == null) return;
+        blur.setOpacity(prefs.opacity());
         blur.setEnabled(prefs.blur());
         blur.bind(window, view, view.isDark(), view.panelRadiusPx());
+        view.onBlurModeChanged(blur.mode(), ""); // a recreated view starts without the current mode
     }
 
     @Override public boolean onEvaluateFullscreenMode() {

@@ -2,8 +2,8 @@ package dev.glasskeyboard.ime;
 
 import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.util.Log;
 import android.view.View;
@@ -29,10 +29,13 @@ final class PanelBlur {
 
     enum Mode { OPLUS, WINDOW, NONE }
 
-    static final int TINT_LIGHT = 0xCCE1E1E1;
-    static final int TINT_DARK = 0x990D0D0D;
+    /** Panel tint: ColorOS colors (#E1E1E1 / #0D0D0D) with a user-chosen opacity (percent). */
+    static int tint(boolean dark, int opacityPercent) {
+        int a = Math.round(255f * Math.max(0, Math.min(100, opacityPercent)) / 100f);
+        return (a << 24) | (dark ? 0x0D0D0D : 0xE1E1E1);
+    }
 
-    interface Listener { void onBlurModeChanged(Mode mode); }
+    interface Listener { void onBlurModeChanged(Mode mode, String detail); }
 
     private final Listener listener;
     private Window window;
@@ -41,6 +44,10 @@ final class PanelBlur {
     private float cornerPx;
     private Mode mode = Mode.NONE;
     private boolean enabled = true;
+    private int opacity = 88;
+    private String detail = "";
+    private Drawable windowBackground;
+    private float windowBackgroundCorner = -1f;
 
     // ColorOS reflection
     private boolean oplusResolved, oplusAvailable;
@@ -58,6 +65,8 @@ final class PanelBlur {
     PanelBlur(Listener listener) { this.listener = listener; }
 
     Mode mode() { return mode; }
+
+    void setOpacity(int percent) { opacity = percent; }
 
     void setEnabled(boolean value) {
         if (enabled == value) return;
@@ -104,8 +113,7 @@ final class PanelBlur {
 
     private void apply() {
         if (window == null || target == null) return;
-        window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        window.setFormat(PixelFormat.TRANSLUCENT);
+        installWindowBackground();
         if (!enabled) {
             releaseOplus();
             setWindowBlur(0);
@@ -127,11 +135,33 @@ final class PanelBlur {
         setMode(Mode.NONE);
     }
 
+    /**
+     * Transparent window background with a rounded outline. Android's window blur takes its
+     * corner radius from this drawable's outline, so the blurred area gets rounded corners.
+     * Set only when it changes: replacing it triggers a relayout, and we refresh on layout.
+     */
+    private void installWindowBackground() {
+        if (windowBackground == null || windowBackgroundCorner != cornerPx) {
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.TRANSPARENT);
+            bg.setCornerRadius(cornerPx);
+            windowBackground = bg;
+            windowBackgroundCorner = cornerPx;
+            window.setFormat(PixelFormat.TRANSLUCENT);
+        }
+        if (window.getDecorView().getBackground() != windowBackground) {
+            window.setBackgroundDrawable(windowBackground);
+        }
+    }
+
+    private String reportedDetail = null;
+
     private void setMode(Mode value) {
-        if (mode == value) return;
+        if (mode == value && detail.equals(reportedDetail)) return;
         mode = value;
-        Log.i(TAG, "blur mode = " + value);
-        if (listener != null) listener.onBlurModeChanged(value);
+        reportedDetail = detail;
+        Log.i(TAG, "blur mode = " + value + " " + detail);
+        if (listener != null) listener.onBlurModeChanged(value, detail);
     }
 
     // ---------------------------------------------------------------- ColorOS
@@ -143,7 +173,7 @@ final class PanelBlur {
             Class<?> props = Class.forName("android.os.SystemProperties");
             String rom = (String) props.getMethod("get", String.class, String.class)
                     .invoke(null, "ro.build.version.oplusrom", "");
-            if (rom == null || rom.isEmpty()) return oplusAvailable = false;
+            if (rom == null || rom.isEmpty()) { detail = "не ColorOS"; return oplusAvailable = false; }
             ClassLoader loader = PanelBlur.class.getClassLoader();
             Class<?> managerType = Class.forName("com.oplus.view.ViewRootManager", false, loader);
             Class<?> paramsType = Class.forName("com.oplus.graphics.OplusBlurParam", false, loader);
@@ -161,6 +191,7 @@ final class PanelBlur {
             Log.i(TAG, "ColorOS material API found, oplusrom=" + rom);
             return oplusAvailable = true;
         } catch (Throwable error) {
+            detail = "API ColorOS недоступен: " + error.getClass().getSimpleName() + " " + error.getMessage();
             Log.i(TAG, "ColorOS material API not available: " + error);
             return oplusAvailable = false;
         }
@@ -174,11 +205,11 @@ final class PanelBlur {
             if (manager == null) {
                 manager = managerCtor.newInstance(view);
                 oplusDrawable = (Drawable) getDrawable.invoke(manager);
-                if (oplusDrawable == null) { manager = null; return false; }
+                if (oplusDrawable == null) { manager = null; detail = "ColorOS не вернул drawable"; return false; }
                 view.setBackground(oplusDrawable);
                 if (Build.VERSION.SDK_INT >= 31) rootSurface = view.getRootSurfaceControl();
             }
-            int tint = dark ? TINT_DARK : TINT_LIGHT;
+            int tint = tint(dark, opacity);
             Object params = paramsCtor.newInstance();
             setType.invoke(params, 2);
             setMaterial.invoke(params, 1, new float[]{1f, 1f, 1f, 1f},
@@ -190,8 +221,11 @@ final class PanelBlur {
             setParams.invoke(manager, params);
             setCorners.invoke(manager, cornerPx, cornerPx, 0f, 0f);
             setRadius.invoke(manager, 150);
+            detail = "";
             return true;
         } catch (Throwable error) {
+            Throwable cause = error.getCause() != null ? error.getCause() : error;
+            detail = "ошибка материала ColorOS: " + cause.getClass().getSimpleName() + " " + cause.getMessage();
             Log.w(TAG, "ColorOS material failed, falling back", error);
             releaseOplus();
             oplusAvailable = false;

@@ -14,12 +14,13 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 
 /** Setup steps, a few toggles and a test field. Built in code: no extra libraries. */
 public final class SettingsActivity extends Activity {
-    private TextView status;
+    private TextView status, blurStatus;
     private Prefs prefs;
 
     @Override protected void onCreate(Bundle state) {
@@ -75,6 +76,14 @@ public final class SettingsActivity extends Activity {
         addSwitch(root, R.string.opt_auto_caps, Prefs.AUTO_CAPS, true);
         addSwitch(root, R.string.opt_double_space, Prefs.DOUBLE_SPACE, true);
 
+        addSlider(root, R.string.opt_opacity, Prefs.OPACITY, prefs.opacity(), 50, 100, "%");
+        addSlider(root, R.string.opt_bottom, Prefs.BOTTOM_OFFSET, prefs.bottomOffset(), 0, 48, " dp");
+
+        blurStatus = new TextView(this);
+        blurStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        blurStatus.setPadding(0, dp(12), 0, 0);
+        root.addView(blurStatus);
+
         TextView blurNote = new TextView(this);
         blurNote.setText(R.string.blur_note);
         blurNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -112,6 +121,8 @@ public final class SettingsActivity extends Activity {
         }
         String current = Settings.Secure.getString(getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
         boolean selected = current != null && current.startsWith(getPackageName() + "/");
+        String mode = prefs.blurStatus();
+        blurStatus.setText(getString(R.string.blur_status, mode.isEmpty() ? getString(R.string.blur_unknown) : mode));
         status.setText(selected ? R.string.status_ready : enabled ? R.string.status_enabled : R.string.status_disabled);
     }
 
@@ -123,6 +134,27 @@ public final class SettingsActivity extends Activity {
         s.setPadding(0, dp(10), 0, dp(10));
         s.setOnCheckedChangeListener((b, checked) -> prefs.set(key, checked));
         root.addView(s, matchWrap());
+    }
+
+    private void addSlider(LinearLayout root, int label, String key, int value, int min, int max, String unit) {
+        TextView title = new TextView(this);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        title.setPadding(0, dp(12), 0, 0);
+        String name = getString(label);
+        title.setText(name + ": " + value + unit);
+        root.addView(title);
+        SeekBar bar = new SeekBar(this);
+        bar.setMax(max - min);
+        bar.setProgress(value - min);
+        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar b, int progress, boolean fromUser) {
+                title.setText(name + ": " + (progress + min) + unit);
+                if (fromUser) prefs.setInt(key, progress + min);
+            }
+            @Override public void onStartTrackingTouch(SeekBar b) { }
+            @Override public void onStopTrackingTouch(SeekBar b) { }
+        });
+        root.addView(bar, matchWrap());
     }
 
     private LinearLayout.LayoutParams matchWrap() {

@@ -100,7 +100,8 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     private int laidOutWidth = -1;
 
     // Dimensions
-    private final float toolbarH, keyH, rowPitch, hGap, sidePad, topPad, bottomPad, keyRadius, panelRadius;
+    private final float toolbarH, keyH, rowPitch, hGap, sidePad, topPad, keyRadius, panelRadius;
+    private float bottomPad;
 
     KeyboardView(Context context, Prefs prefs, Actions actions) {
         super(context);
@@ -114,7 +115,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         hGap = 6 * dp;
         sidePad = 3 * dp;
         topPad = 4 * dp;
-        bottomPad = 6 * dp;
+        bottomPad = (6 + prefs.bottomOffset()) * dp;
         keyRadius = 10 * dp;
         panelRadius = 28 * dp;
 
@@ -168,10 +169,11 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     void resetState() {
         cancelAllFingers();
         if (shift != SHIFT_LOCK) shift = SHIFT_OFF;
+        requestLayout();
         invalidate();
     }
 
-    @Override public void onBlurModeChanged(PanelBlur.Mode mode) {
+    @Override public void onBlurModeChanged(PanelBlur.Mode mode, String detail) {
         blurMode = mode;
         invalidate();
     }
@@ -185,6 +187,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         int width = MeasureSpec.getSize(widthSpec);
         int rows = layout.rows.size();
+        bottomPad = (6 + prefs.bottomOffset()) * dp; // re-read: may change in settings
         int height = Math.round(topPad + toolbarH + rows * rowPitch + bottomPad) + insetBottom;
         setMeasuredDimension(width, height);
     }
@@ -266,17 +269,18 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     }
 
     private void drawPanel(Canvas canvas, float w, float h) {
-        float radius = blurMode == PanelBlur.Mode.WINDOW ? 0f : panelRadius;
+        // Window blur is clipped to the window outline (all four corners rounded), so the tint matches it.
+        boolean windowBlur = blurMode == PanelBlur.Mode.WINDOW;
+        float r = panelRadius;
         if (blurMode != PanelBlur.Mode.OPLUS) {
-            int color;
-            if (blurMode == PanelBlur.Mode.WINDOW) color = dark ? PanelBlur.TINT_DARK : PanelBlur.TINT_LIGHT;
-            else color = dark ? 0xF21B1B1D : 0xF2E6E7EA;
-            panelPaint.setColor(color);
+            int opacity = blurMode == PanelBlur.Mode.NONE ? Math.max(prefs.opacity(), 95) : prefs.opacity();
+            panelPaint.setColor(PanelBlur.tint(dark, opacity));
             path.reset();
-            path.addRoundRect(0f, 0f, w, h, new float[]{radius, radius, radius, radius, 0, 0, 0, 0}, Path.Direction.CW);
+            float b = windowBlur ? r : 0f;
+            path.addRoundRect(0f, 0f, w, h, new float[]{r, r, r, r, b, b, b, b}, Path.Direction.CW);
             canvas.drawPath(path, panelPaint);
         }
-        painter.drawPanelRim(canvas, w, h, radius);
+        painter.drawPanelRim(canvas, w, h, r);
     }
 
     private float pressAmount(Cell c, long now) {
