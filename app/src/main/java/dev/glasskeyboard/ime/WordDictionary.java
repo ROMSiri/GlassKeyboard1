@@ -90,9 +90,9 @@ final class WordDictionary {
 
     static WordDictionary load(Context context, String lang) throws Exception {
         InputStream bigramStream = null;
-        try { bigramStream = context.getAssets().open("bigrams_" + lang + ".txt.gz"); }
+        try { bigramStream = context.getAssets().open("bigrams_" + lang + ".dat"); }
         catch (java.io.IOException noBigrams) { /* none for this language */ }
-        return load(lang, context.getAssets().open("dict_" + lang + ".txt.gz"), bigramStream);
+        return load(lang, context.getAssets().open("dict_" + lang + ".dat"), bigramStream);
     }
 
     /** Loads from gzip streams (closes them). */

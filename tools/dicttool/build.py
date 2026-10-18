@@ -1,8 +1,8 @@
 """Build compact dictionaries for Glass Keyboard from AOSP .dict files.
-Output (gzip, UTF-8):
-  dict_<lang>.txt.gz : one entry per line "<freq>\t<word>", sorted by lowercase word; freq 0..255,
+Output (gzip, UTF-8; ".dat" because aapt unpacks ".gz" assets):
+  dict_<lang>.dat : one entry per line "<freq>\t<word>", sorted by lowercase word; freq 0..255,
                        possibly offensive words get freq 0 (valid, never suggested).
-  bigrams_<lang>.txt.gz : "<word>\t<next1> <next2> ..." (only when the source has bigrams)
+  bigrams_<lang>.dat : "<word>\t<next1> <next2> ..." (only when the source has bigrams)
 """
 import gzip, sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -16,11 +16,11 @@ def build(src, lang, out):
         f = 0 if off else prob
         if best.get(w, -1) < f: best[w] = f
     items = sorted(best.items(), key=lambda kv: (kv[0].lower(), kv[0]))
-    with gzip.open(f'{out}/dict_{lang}.txt.gz', 'wt', encoding='utf-8', compresslevel=9) as fh:
+    with gzip.open(f'{out}/dict_{lang}.dat', 'wt', encoding='utf-8', compresslevel=9) as fh:
         for w, f in items: fh.write(f'{f}\t{w}\n')
     nb = 0
     if bigrams:
-        with gzip.open(f'{out}/bigrams_{lang}.txt.gz', 'wt', encoding='utf-8', compresslevel=9) as fh:
+        with gzip.open(f'{out}/bigrams_{lang}.dat', 'wt', encoding='utf-8', compresslevel=9) as fh:
             for w, tl in sorted(bigrams.items()):
                 nxt = [t for t, _ in sorted(tl, key=lambda x: -x[1]) if t in best and best[t] > 0 and ' ' not in t]
                 if nxt and best.get(w, 0) > 0:
