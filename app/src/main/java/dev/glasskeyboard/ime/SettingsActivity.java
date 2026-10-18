@@ -87,7 +87,6 @@ public final class SettingsActivity extends Activity {
         textColor = dark ? 0xfff2f2f4 : 0xff1d1d1f;
         subColor = dark ? 0xff9a9aa1 : 0xff6e6e73;
         divider = dark ? 0x22ffffff : 0x14000000;
-        setupWindow();
 
         scroll = new ScrollView(this);
         scroll.setClipToPadding(false);
@@ -105,12 +104,14 @@ public final class SettingsActivity extends Activity {
             v.setPadding(0, top, 0, bottom);
             return insets;
         });
-        setContentView(scroll);
+        setContentView(scroll);   // creates the window decor; system bars can be styled after this
+        setupWindow();
         build();
     }
 
     private void setupWindow() {
         getWindow().setBackgroundDrawable(new ColorDrawable(pageBg));
+        getWindow().getDecorView(); // make sure the decor exists
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
             getWindow().setStatusBarColor(0);
