@@ -197,7 +197,8 @@ final class Suggest {
         list.sort((a, b) -> Double.compare(b.score, a.score));
         List<Cand> ranked = new ArrayList<>();
         for (Cand c : list) {
-            if (c.word.equalsIgnoreCase(typed)) continue;
+            // a valid word is shown on its own; otherwise only its exact spelling is redundant ("i" → "I" stays)
+            if (r.typedIsWord ? c.word.equalsIgnoreCase(typed) : c.word.equals(typed)) continue;
             ranked.add(c);
             if (ranked.size() >= o.chips) break;
         }
@@ -222,7 +223,8 @@ final class Suggest {
         } else {
             Cand best = ranked.isEmpty() ? null : ranked.get(0);
             for (Cand c : ranked) order.add(matchCase(c.word, typed));
-            if (best != null && o.autocorrect && typed.length() > 1) {
+            boolean shortcut = best != null && best.correction && best.cost == 0 && best.score >= 300;
+            if (best != null && o.autocorrect && (typed.length() > 1 || shortcut)) {
                 if (o.threshold >= 2) {
                     r.autocorrect = true; // very aggressive: always take the top suggestion
                 } else {
