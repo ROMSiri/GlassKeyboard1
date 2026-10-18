@@ -120,6 +120,15 @@ final class Layouts {
                 .row(bottomRow("АБВ", ALPHA, 1f));
     }
 
+    /** Big digits; opened from the toolbar. */
+    static Layout numpad() {
+        return new Layout("num")
+                .row(ch("1"), ch("2"), ch("3"), ch("-", "+−±"))
+                .row(ch("4"), ch("5"), ch("6"), ch(",", ";:"))
+                .row(ch("7"), ch("8"), ch("9"), fn("", DELETE, 1f))
+                .row(fn("АБВ", ALPHA, 1f), ch("0"), ch(".", "/%"), new Key("", ENTER, "", 1f, Kind.ACCENT));
+    }
+
     static Layout symbolsMore() {
         return new Layout("sym2")
                 .row(chars("~`|•√π÷×¶∆", null))

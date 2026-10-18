@@ -31,6 +31,7 @@ def decode(path):
     body = d[hsize:]
     words = {}      # node pos -> (word, prob)
     bigram_src = [] # (node pos, [(target pos, prob4)])
+    shortcut_map = {}  # word -> [(target, prob4)]; prob 15 = whitelist (always autocorrect)
 
     stack = [(0, '')]
     while stack:
@@ -59,8 +60,20 @@ def decode(path):
                 size = {0x40: 1, 0x80: 2, 0xC0: 3}[t]
                 off = int.from_bytes(body[p:p+size], 'big'); p += size
                 child = base + off
+            shortcuts = []
             if flags & 0x08:
-                sz = struct.unpack('>H', body[p:p+2])[0]; p += sz
+                sz = struct.unpack('>H', body[p:p+2])[0]
+                q, end = p + 2, p + sz
+                while q < end:
+                    sf = body[q]; q += 1
+                    tgt = []
+                    while True:
+                        c, q = read_cp(body, q, None)
+                        if c is None: break
+                        tgt.append(c)
+                    shortcuts.append((''.join(map(chr, tgt)), sf & 0x0F))
+                    if not sf & 0x80: break
+                p += sz
             bl = []
             if flags & 0x04:
                 while True:
@@ -70,6 +83,7 @@ def decode(path):
                     tgt = origin - off if bf & 0x40 else origin + off
                     bl.append((tgt, bf & 0x0F))
                     if not bf & 0x80: break
+            if shortcuts: shortcut_map[w] = shortcuts
             if prob is not None and not flags & 0x02:
                 words[node] = (w, prob, bool(flags & 0x01))
             if bl and node in words: bigram_src.append((node, bl))
@@ -81,10 +95,11 @@ def decode(path):
         src = words[node][0]
         tl = [(words[t][0], pr) for t, pr in bl if t in words]
         if tl: bigrams[src] = tl
-    return attrs, words, bigrams
+    return attrs, words, bigrams, shortcut_map
 
 if __name__ == '__main__':
-    attrs, words, bigrams = decode(sys.argv[1])
+    attrs, words, bigrams, shortcuts = decode(sys.argv[1])
+    print(len(shortcuts), 'shortcut sources', list(shortcuts.items())[:15])
     ws = sorted(words.values(), key=lambda x: -x[1])
     print(len(ws), 'words', len(bigrams), 'bigram sources', sum(len(v) for v in bigrams.values()), 'pairs')
     print(ws[:30])

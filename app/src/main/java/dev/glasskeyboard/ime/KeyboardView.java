@@ -23,10 +23,14 @@ import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
-/** Draws the whole keyboard (toolbar + keys) on one canvas and handles multi-touch input. */
+/** Draws the whole keyboard (strip + keys) on one canvas and handles multi-touch and gestures. */
 @SuppressLint("ViewConstructor")
 final class KeyboardView extends View implements PanelBlur.Listener {
 
@@ -36,40 +40,51 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         void onEnter();
         void onCursor(int delta);
         void onHide();
-        void onPaste();
-        void onSettings();
         void onLanguageChanged(String lang);
         void onPickInputMethod();
         void onSuggestion(int slot);
+        void onToolKey(ToolKey key);
+        void onShift();
+        void onGestureStart(Map<Character, float[]> centers, float keyWidth);
+        String onGestureProgress(float[] xs, float[] ys, int n);
+        void onGesture(List<float[]> xs, List<float[]> ys);
     }
 
     static final int SHIFT_OFF = 0, SHIFT_ONCE = 1, SHIFT_LOCK = 2;
 
-    private static final int TOOL_SETTINGS = 1, TOOL_PASTE = 2, TOOL_LEFT = 3, TOOL_RIGHT = 4, TOOL_HIDE = 5;
     private static final long LONG_PRESS_MS = 300, DELETE_DELAY_MS = 400, DELETE_REPEAT_MS = 55,
-            RELEASE_FADE_MS = 160, DOUBLE_SHIFT_MS = 320;
+            RELEASE_FADE_MS = 160, DOUBLE_SHIFT_MS = 320, PREVIEW_EVERY_MS = 90;
 
-    /** A laid-out key or toolbar button. */
+    // strip cell ids
+    private static final int CELL_SLOT = 100;      // + slot index
+    private static final int CELL_TOOL = 200;      // + ToolKey ordinal
+    private static final int CELL_TOGGLE = 300, CELL_RESIZE_DONE = 301, CELL_ONEHAND_SWAP = 302,
+            CELL_ONEHAND_EXIT = 303, CELL_RESIZE_MINUS = 304, CELL_RESIZE_PLUS = 305;
+
+    /** A laid-out key or strip button. */
     private static final class Cell {
-        final Layouts.Key key;    // null for toolbar buttons
-        final int tool;
+        final Layouts.Key key;    // null for strip buttons
+        final int id;
+        final ToolKey tool;
         final RectF rect = new RectF();
         int row;
         boolean pressed;
         long downAt, upAt;
-        Cell(Layouts.Key key, int tool) { this.key = key; this.tool = tool; }
+        Cell(Layouts.Key key, int id, ToolKey tool) { this.key = key; this.id = id; this.tool = tool; }
     }
 
     /** State of one finger. */
     private static final class Finger {
         int id;
         Cell cell;
-        float downX, downY, lastCursorX;
-        boolean longPressed, cursorMode, done;
+        float downX, downY, lastX, lastCursorX;
+        long downTime;
+        boolean longPressed, cursorMode, done, scrolling, gesture, overSpace;
         List<String> alts;
         int altIndex;
         RectF altRect;
         Runnable longPress, repeat;
+        float scrollStart;
     }
 
     private final Actions actions;
@@ -80,18 +95,40 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     private final float dp;
 
     private final List<Cell> keys = new ArrayList<>();
-    private final List<Cell> tools = new ArrayList<>();
-    private static final int TOOL_SUGGESTION = 100; // + slot index
-    private final Cell[] slotCells = {new Cell(null, TOOL_SUGGESTION), new Cell(null, TOOL_SUGGESTION + 1),
-            new Cell(null, TOOL_SUGGESTION + 2)};
-    private String[] suggestions;      // null: show the toolbar
+    private final SparseArray<Finger> fingers = new SparseArray<>();
+
+    // ---- strip
+    private final List<Cell> toolCells = new ArrayList<>();     // scrollable toolbar row
+    private final List<Cell> pinnedCells = new ArrayList<>();   // right side next to suggestions
+    private Cell[] slotCells = new Cell[0];
+    private final Cell toggleCell = new Cell(null, CELL_TOGGLE, null);
+    private final Cell resizeDone = new Cell(null, CELL_RESIZE_DONE, null);
+    private final Cell resizeMinus = new Cell(null, CELL_RESIZE_MINUS, null);
+    private final Cell resizePlus = new Cell(null, CELL_RESIZE_PLUS, null);
+    private final Cell swapCell = new Cell(null, CELL_ONEHAND_SWAP, null);
+    private final Cell exitCell = new Cell(null, CELL_ONEHAND_EXIT, null);
+    private String[] suggestions;       // null: nothing to suggest
     private int literalSlot = -1;
     private boolean boldCenter;
-    private final SparseArray<Finger> fingers = new SparseArray<>();
+    private boolean expanded;           // EXPANDABLE mode: toolbar opened by the toggle
+    private float toolScroll, toolContentW, toolAreaL, toolAreaR;
+    private final Set<ToolKey> activeTools = EnumSet.noneOf(ToolKey.class);
+    private boolean resizeMode;
+    private String mode;
+
+    // ---- gesture
+    private final List<float[]> trail = new ArrayList<>();      // x, y, time
+    private final List<float[]> segXs = new ArrayList<>(), segYs = new ArrayList<>();
+    private float[] gx = new float[256], gy = new float[256];
+    private int gn;
+    private String floatingText;
+    private float floatX, floatY;
+    private long lastPreviewAt, lastTapAt;
 
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint icon = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint panelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint trailPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private final RectF tmp = new RectF();
 
@@ -107,8 +144,10 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     private int laidOutWidth = -1;
 
     // Dimensions
-    private final float toolbarH, keyH, rowPitch, hGap, sidePad, topPad, keyRadius, panelRadius;
+    private float toolbarH, keyH, rowPitch;
+    private final float hGap, sidePad, topPad, keyRadius, panelRadius, stripH;
     private float bottomPad;
+    private float keysLeft, keysRight;   // horizontal extent of the key area (one-handed mode)
 
     KeyboardView(Context context, Prefs prefs, Actions actions) {
         super(context);
@@ -116,15 +155,13 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         this.actions = actions;
         dp = context.getResources().getDisplayMetrics().density;
         audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        toolbarH = 46 * dp;
-        keyH = 46 * dp;
-        rowPitch = 56 * dp;
+        stripH = 46 * dp;
         hGap = 6 * dp;
         sidePad = 3 * dp;
         topPad = 4 * dp;
-        bottomPad = (6 + prefs.bottomOffset()) * dp;
         keyRadius = 10 * dp;
         panelRadius = 28 * dp;
+        readDimensions();
 
         dark = isNight(context);
         painter = new GlassPainter(context, dark);
@@ -138,9 +175,9 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         icon.setStrokeCap(Paint.Cap.ROUND);
         icon.setStrokeJoin(Paint.Join.ROUND);
         icon.setStrokeWidth(1.7f * dp);
-
-        for (int t : new int[]{TOOL_SETTINGS, TOOL_PASTE, TOOL_LEFT, TOOL_RIGHT, TOOL_HIDE})
-            tools.add(new Cell(null, t));
+        trailPaint.setStyle(Paint.Style.STROKE);
+        trailPaint.setStrokeCap(Paint.Cap.ROUND);
+        trailPaint.setStrokeWidth(5 * dp);
 
         setOnApplyWindowInsetsListener((v, insets) -> {
             int bottom = Build.VERSION.SDK_INT >= 30
@@ -151,21 +188,38 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         });
     }
 
+    private void readDimensions() {
+        mode = prefs.toolbarMode();
+        toolbarH = Prefs.MODE_HIDDEN.equals(mode) && !resizeMode ? 0 : stripH;
+        float scale = prefs.keyHeight() / 100f;
+        keyH = 46 * dp * scale;
+        rowPitch = keyH + 10 * dp * scale;
+        bottomPad = (6 + prefs.bottomOffset()) * dp;
+    }
+
     // ------------------------------------------------------------------ public API
 
     float panelRadiusPx() { return panelRadius; }
     String language() { return lang; }
+    boolean isDark() { return dark; }
 
-    /** Word suggestions in place of the toolbar; null brings the toolbar back. */
+    /** Word suggestions for the strip; null when there is nothing to suggest. */
     void setSuggestions(String[] slots, int literal, boolean autocorrect) {
         boolean any = false;
         if (slots != null) for (String s : slots) any |= s != null;
-        suggestions = any ? slots.clone() : null;
+        String[] next = any ? slots.clone() : null;
+        boolean wasShown = suggestions != null;
+        suggestions = next;
         literalSlot = literal;
         boldCenter = autocorrect;
+        if (next == null || !wasShown) expanded = false;
+        if (next != null && slotCells.length != next.length) layoutStrip();
         invalidate();
     }
-    boolean isDark() { return dark; }
+
+    void setToolState(ToolKey key, boolean active) {
+        if (active ? activeTools.add(key) : activeTools.remove(key)) invalidate();
+    }
 
     void setEnterAction(int action) {
         if (enterAction != action) { enterAction = action; invalidate(); }
@@ -187,7 +241,11 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     void resetState() {
         cancelAllFingers();
         if (shift != SHIFT_LOCK) shift = SHIFT_OFF;
+        resizeMode = false;
+        expanded = false;
+        readDimensions();
         requestLayout();
+        relayout();
         invalidate();
     }
 
@@ -204,8 +262,8 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         int width = MeasureSpec.getSize(widthSpec);
+        readDimensions();
         int rows = layout.rows.size();
-        bottomPad = (6 + prefs.bottomOffset()) * dp; // re-read: may change in settings
         int height = Math.round(topPad + toolbarH + rows * rowPitch + bottomPad) + insetBottom;
         setMeasuredDimension(width, height);
     }
@@ -231,15 +289,19 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         if (w <= 0) return;
         laidOutWidth = w;
         keys.clear();
-        float unit = (w - 2 * sidePad) / layout.maxWeight;
+        int oneHanded = prefs.oneHanded();
+        float areaW = oneHanded == 0 ? w - 2 * sidePad : (w - 2 * sidePad) * .82f;
+        keysLeft = oneHanded == 2 ? sidePad : (oneHanded == 1 ? w - sidePad - areaW : sidePad);
+        keysRight = keysLeft + areaW;
+        float unit = areaW / layout.maxWeight;
         float y = topPad + toolbarH;
         for (int r = 0; r < layout.rows.size(); r++) {
             List<Layouts.Key> row = layout.rows.get(r);
             float rowWeight = 0f;
             for (Layouts.Key k : row) rowWeight += k.weight;
-            float x = sidePad + (layout.maxWeight - rowWeight) / 2f * unit;
+            float x = keysLeft + (layout.maxWeight - rowWeight) / 2f * unit;
             for (Layouts.Key k : row) {
-                Cell c = new Cell(k, 0);
+                Cell c = new Cell(k, 0, null);
                 c.row = r;
                 float kw = k.weight * unit;
                 c.rect.set(x + hGap / 2f, y + (rowPitch - keyH) / 2f, x + kw - hGap / 2f, y + (rowPitch + keyH) / 2f);
@@ -248,26 +310,100 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             }
             y += rowPitch;
         }
-        // Toolbar: two buttons on the left, three on the right.
-        float size = 36 * dp, gap = 8 * dp, cy = topPad + toolbarH / 2f;
-        float left = sidePad + 6 * dp, right = w - sidePad - 6 * dp;
-        for (Cell t : tools) {
-            float cx;
-            switch (t.tool) {
-                case TOOL_SETTINGS: cx = left + size / 2f; break;
-                case TOOL_PASTE: cx = left + size * 1.5f + gap; break;
-                case TOOL_LEFT: cx = right - size * 2.5f - gap * 2; break;
-                case TOOL_RIGHT: cx = right - size * 1.5f - gap; break;
-                default: cx = right - size / 2f; break;
-            }
-            t.rect.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
+        // one-handed side buttons, centred in the free column
+        if (oneHanded != 0) {
+            float colL = oneHanded == 1 ? sidePad : keysRight, colR = oneHanded == 1 ? keysLeft : w - sidePad;
+            float cx = (colL + colR) / 2f, keysMid = topPad + toolbarH + layout.rows.size() * rowPitch / 2f;
+            float s = Math.min(40 * dp, colR - colL - 6 * dp);
+            swapCell.rect.set(cx - s / 2f, keysMid - s - 8 * dp, cx + s / 2f, keysMid - 8 * dp);
+            exitCell.rect.set(cx - s / 2f, keysMid + 8 * dp, cx + s / 2f, keysMid + 8 * dp + s);
         }
-        float slotW = (w - 2 * sidePad) / 3f;
-        for (int i = 0; i < 3; i++) {
-            float l = sidePad + i * slotW;
-            slotCells[i].rect.set(l + 3 * dp, cy - 18 * dp, l + slotW - 3 * dp, cy + 18 * dp);
-        }
+        layoutStrip();
         invalidate();
+    }
+
+    /** Positions of the strip parts for the current mode and state. */
+    private void layoutStrip() {
+        int w = getWidth();
+        if (w <= 0) return;
+        float cy = topPad + toolbarH / 2f, size = 36 * dp, gap = 8 * dp;
+        float l = sidePad + 4 * dp, r = w - sidePad - 4 * dp;
+
+        boolean expandable = Prefs.MODE_EXPANDABLE.equals(mode);
+        if (expandable) {
+            toggleCell.rect.set(l, cy - size / 2f, l + size, cy + size / 2f);
+            l += size + gap;
+        }
+        resizeDone.rect.set(r - 96 * dp, cy - size / 2f, r, cy + size / 2f);
+        resizeMinus.rect.set(sidePad + 4 * dp, cy - size / 2f, sidePad + 4 * dp + size, cy + size / 2f);
+        resizePlus.rect.set(resizeDone.rect.left - gap - size, cy - size / 2f, resizeDone.rect.left - gap, cy + size / 2f);
+
+        // pinned keys (EXPANDABLE) or the persistent key (SUGGESTION_STRIP) on the right
+        pinnedCells.clear();
+        List<ToolKey> right = new ArrayList<>();
+        if (expandable) right.addAll(ToolKey.parse(prefs.pinnedKeys(), true));
+        else if (Prefs.MODE_STRIP.equals(mode)) {
+            try { right.add(ToolKey.valueOf(prefs.persistentKey())); } catch (IllegalArgumentException ignored) { }
+        }
+        float pr = r;
+        for (int i = right.size() - 1; i >= 0; i--) {
+            Cell c = new Cell(null, CELL_TOOL + right.get(i).ordinal(), right.get(i));
+            c.rect.set(pr - size, cy - size / 2f, pr, cy + size / 2f);
+            pinnedCells.add(0, c);
+            pr -= size + gap;
+        }
+
+        // suggestion slots between
+        int n = suggestions != null ? suggestions.length : 3;
+        if (slotCells.length != n) {
+            slotCells = new Cell[n];
+            for (int i = 0; i < n; i++) slotCells[i] = new Cell(null, CELL_SLOT + i, null);
+        }
+        float sl = l - (expandable ? 2 * dp : 0), sr = pinnedCells.isEmpty() ? r : pr + gap / 2f;
+        float slotW = (sr - sl) / n;
+        for (int i = 0; i < n; i++)
+            slotCells[i].rect.set(sl + i * slotW + 2 * dp, cy - 18 * dp, sl + (i + 1) * slotW - 2 * dp, cy + 18 * dp);
+
+        // scrollable toolbar keys
+        toolCells.clear();
+        toolAreaL = l;
+        toolAreaR = r;
+        float x = l;
+        for (ToolKey k : ToolKey.parse(prefs.toolbarKeys(), true)) {
+            Cell c = new Cell(null, CELL_TOOL + k.ordinal(), k);
+            c.rect.set(x, cy - size / 2f, x + size, cy + size / 2f);
+            toolCells.add(c);
+            x += size + gap;
+        }
+        toolContentW = x - gap - l;
+        // without scrolling, spread the keys over the full width
+        float avail = toolAreaR - toolAreaL;
+        if (toolContentW < avail && toolCells.size() > 1) {
+            float step = (avail - size) / (toolCells.size() - 1);
+            step = Math.min(step, size * 1.9f);
+            float start = toolAreaL + (avail - (step * (toolCells.size() - 1) + size)) / 2f;
+            for (int i = 0; i < toolCells.size(); i++) {
+                float cx0 = start + i * step;
+                toolCells.get(i).rect.set(cx0, cy - size / 2f, cx0 + size, cy + size / 2f);
+            }
+            toolContentW = avail;
+        }
+        toolScroll = clamp(toolScroll, 0, Math.max(0, toolContentW - avail));
+    }
+
+    /** What the strip shows right now. */
+    private boolean showSlots() {
+        if (toolbarH == 0 || resizeMode) return false;
+        if (Prefs.MODE_KEYS.equals(mode)) return false;
+        if (Prefs.MODE_STRIP.equals(mode)) return true;
+        return suggestions != null && !expanded;
+    }
+
+    private boolean showToolRow() {
+        if (toolbarH == 0 || resizeMode) return false;
+        if (Prefs.MODE_KEYS.equals(mode)) return true;
+        if (Prefs.MODE_STRIP.equals(mode)) return false;
+        return suggestions == null || expanded;
     }
 
     // ------------------------------------------------------------------ drawing
@@ -280,14 +416,34 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
         drawPanel(canvas, w, h);
 
-        if (suggestions != null) animating |= drawSuggestions(canvas, now);
-        else for (Cell t : tools) animating |= drawTool(canvas, t, now);
+        if (resizeMode) drawResizeBar(canvas, now);
+        else if (toolbarH > 0) {
+            if (Prefs.MODE_EXPANDABLE.equals(mode)) animating |= drawToggle(canvas, now);
+            if (showSlots()) {
+                if (suggestions != null) animating |= drawSuggestions(canvas, now);
+                for (Cell c : pinnedCells) animating |= drawTool(canvas, c, now);
+            }
+            if (showToolRow()) {
+                int save = canvas.save();
+                canvas.clipRect(toolAreaL - 4 * dp, 0, toolAreaR + 4 * dp, topPad + toolbarH);
+                canvas.translate(-toolScroll, 0);
+                for (Cell c : toolCells) animating |= drawTool(canvas, c, now);
+                canvas.restoreToCount(save);
+            }
+        }
         for (Cell c : keys) animating |= drawKey(canvas, c, now);
+        if (prefs.oneHanded() != 0) {
+            animating |= drawRoundButton(canvas, swapCell, now, "swap");
+            animating |= drawRoundButton(canvas, exitCell, now, "exit");
+        }
+
+        animating |= drawTrail(canvas, now);
 
         Finger top = topFinger();
         if (top != null && top.alts != null) drawAlternatives(canvas, top);
-        else if (top != null && prefs.preview() && top.cell != null && top.cell.key != null
+        else if (top != null && !top.gesture && prefs.preview() && top.cell != null && top.cell.key != null
                 && top.cell.key.kind == Layouts.Kind.CHAR && !top.cursorMode) drawPreview(canvas, top.cell);
+        if (floatingText != null && top != null && top.gesture) drawFloating(canvas);
 
         if (animating) postInvalidateOnAnimation();
     }
@@ -315,10 +471,13 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         return t * t;
     }
 
+    private int fg() { return dark ? 0xfff2f2f2 : 0xff1d1d1f; }
+
     private boolean drawSuggestions(Canvas canvas, long now) {
         boolean animating = false;
-        int fg = dark ? 0xfff2f2f2 : 0xff1d1d1f;
-        for (int i = 0; i < 3; i++) {
+        int fg = fg();
+        int n = Math.min(slotCells.length, suggestions.length);
+        for (int i = 0; i < n; i++) {
             Cell c = slotCells[i];
             String s = suggestions[i];
             float p = pressAmount(c, now);
@@ -326,26 +485,66 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             if (s == null) continue;
             if (p > 0f) {
                 scaled(c.rect, 1f - .04f * p);
-                painter.draw(canvas, tmp, tmp.height() / 2f,
-                        dark ? 0x3dffffff : 0x85ffffff, painter.round, p);
+                painter.draw(canvas, tmp, tmp.height() / 2f, dark ? 0x3dffffff : 0x85ffffff, painter.round, p);
             }
-            boolean bold = i == 1 && (boldCenter || literalSlot != 1);
-            text.setTypeface(Typeface.create("sans-serif", bold && boldCenter ? Typeface.BOLD : Typeface.NORMAL));
-            text.setTextSize(sp(16));
+            boolean bold = i == n / 2 && boldCenter;
+            text.setTypeface(Typeface.create("sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL));
+            text.setTextSize(sp(n > 3 ? 14 : 16));
             text.setColor(i == literalSlot ? withAlpha(fg, .6f) : fg);
             String label = i == literalSlot ? "«" + s + "»" : s;
-            drawCentered(canvas, fit(label, c.rect.width() - 8 * dp), c.rect.centerX(), c.rect.centerY());
+            drawCentered(canvas, fit(label, c.rect.width() - 6 * dp), c.rect.centerX(), c.rect.centerY());
         }
         text.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
-        // thin dividers between filled slots
         panelPaint.setColor(withAlpha(fg, .18f));
-        for (int i = 1; i < 3; i++) {
+        for (int i = 1; i < n; i++) {
             if (suggestions[i - 1] == null || suggestions[i] == null) continue;
             float x = (slotCells[i - 1].rect.right + slotCells[i].rect.left) / 2f;
             canvas.drawRect(x - dp * .5f, slotCells[i].rect.centerY() - 9 * dp,
                     x + dp * .5f, slotCells[i].rect.centerY() + 9 * dp, panelPaint);
         }
         return animating;
+    }
+
+    private boolean drawToggle(Canvas canvas, long now) {
+        Cell t = toggleCell;
+        float p = pressAmount(t, now);
+        if (p > 0f) {
+            scaled(t.rect, 1f - .06f * p);
+            painter.draw(canvas, tmp, tmp.width() / 2f, dark ? 0x3dffffff : 0x85bbbec2, painter.round, p);
+        }
+        icon.setColor(withAlpha(fg(), .75f));
+        float cx = t.rect.centerX(), cy = t.rect.centerY(), u = dp;
+        path.reset();
+        boolean open = showToolRow() && suggestions != null;
+        float d = open ? -1 : 1;
+        path.moveTo(cx - d * 2.5f * u, cy - 6 * u);
+        path.lineTo(cx + d * 3.5f * u, cy);
+        path.lineTo(cx - d * 2.5f * u, cy + 6 * u);
+        canvas.drawPath(path, icon);
+        return t.pressed || t.upAt != 0;
+    }
+
+    private void drawResizeBar(Canvas canvas, long now) {
+        text.setColor(fg());
+        text.setTextSize(sp(15));
+        float cy = topPad + stripH / 2f;
+        drawCentered(canvas, "Высота клавиш " + prefs.keyHeight() + "%",
+                (resizeMinus.rect.right + resizePlus.rect.left) / 2f, cy);
+        for (Cell c : new Cell[]{resizeMinus, resizePlus}) {
+            float p = pressAmount(c, now);
+            scaled(c.rect, 1f - .06f * p);
+            painter.draw(canvas, tmp, tmp.width() / 2f,
+                    lerpColor(dark ? 0x26ffffff : 0x8affffff, dark ? 0x3dffffff : 0x85bbbec2, p), painter.round, 1f);
+            icon.setColor(fg());
+            canvas.drawLine(tmp.centerX() - 6 * dp, tmp.centerY(), tmp.centerX() + 6 * dp, tmp.centerY(), icon);
+            if (c == resizePlus)
+                canvas.drawLine(tmp.centerX(), tmp.centerY() - 6 * dp, tmp.centerX(), tmp.centerY() + 6 * dp, icon);
+        }
+        float p = pressAmount(resizeDone, now);
+        painter.draw(canvas, resizeDone.rect, resizeDone.rect.height() / 2f,
+                lerpColor((accent & 0x00ffffff) | 0x99000000, (accent & 0x00ffffff) | 0xc0000000, p), painter.round, 1f);
+        text.setColor(0xffffffff);
+        drawCentered(canvas, "Готово", resizeDone.rect.centerX(), resizeDone.rect.centerY());
     }
 
     /** Ellipsizes {@code s} to {@code width} with the current text paint. */
@@ -358,19 +557,44 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
     private boolean drawTool(Canvas canvas, Cell t, long now) {
         float p = pressAmount(t, now);
-        int fill = lerpColor(dark ? 0x26ffffff : 0x8affffff, dark ? 0x3dffffff : 0x85bbbec2, p);
+        boolean active = t.tool != null && activeTools.contains(t.tool);
+        int normal = active ? (accent & 0x00ffffff) | 0x99000000 : (dark ? 0x26ffffff : 0x8affffff);
+        int pressed = active ? (accent & 0x00ffffff) | 0xc0000000 : (dark ? 0x3dffffff : 0x85bbbec2);
         scaled(t.rect, 1f - .06f * p);
-        painter.draw(canvas, tmp, tmp.width() / 2f, fill, painter.round, 1f);
-        icon.setColor(dark ? 0xfff2f2f2 : 0xff4a4a4f);
-        drawToolIcon(canvas, t.tool, tmp.centerX(), tmp.centerY());
+        painter.draw(canvas, tmp, tmp.width() / 2f, lerpColor(normal, pressed, p), painter.round, 1f);
+        icon.setColor(active ? 0xffffffff : (dark ? 0xfff2f2f2 : 0xff4a4a4f));
+        if (t.tool != null) t.tool.draw(canvas, tmp.centerX(), tmp.centerY(), dp, icon, path, tmp);
         return t.pressed || t.upAt != 0;
+    }
+
+    private boolean drawRoundButton(Canvas canvas, Cell c, long now, String kind) {
+        float p = pressAmount(c, now);
+        scaled(c.rect, 1f - .06f * p);
+        painter.draw(canvas, tmp, tmp.width() / 2f,
+                lerpColor(dark ? 0x26ffffff : 0x8affffff, dark ? 0x3dffffff : 0x85bbbec2, p), painter.round, 1f);
+        icon.setColor(dark ? 0xfff2f2f2 : 0xff4a4a4f);
+        float cx = tmp.centerX(), cy = tmp.centerY(), u = dp;
+        path.reset();
+        if ("swap".equals(kind)) {
+            path.moveTo(cx - 7 * u, cy - 3 * u); path.lineTo(cx + 7 * u, cy - 3 * u);
+            path.moveTo(cx + 4 * u, cy - 6 * u); path.lineTo(cx + 7 * u, cy - 3 * u); path.lineTo(cx + 4 * u, cy);
+            path.moveTo(cx + 7 * u, cy + 3 * u); path.lineTo(cx - 7 * u, cy + 3 * u);
+            path.moveTo(cx - 4 * u, cy); path.lineTo(cx - 7 * u, cy + 3 * u); path.lineTo(cx - 4 * u, cy + 6 * u);
+        } else {
+            path.moveTo(cx - 7 * u, cy - 3 * u); path.lineTo(cx - 7 * u, cy - 7 * u); path.lineTo(cx - 3 * u, cy - 7 * u);
+            path.moveTo(cx + 7 * u, cy + 3 * u); path.lineTo(cx + 7 * u, cy + 7 * u); path.lineTo(cx + 3 * u, cy + 7 * u);
+            path.moveTo(cx - 7 * u, cy - 7 * u); path.lineTo(cx - 2 * u, cy - 2 * u);
+            path.moveTo(cx + 7 * u, cy + 7 * u); path.lineTo(cx + 2 * u, cy + 2 * u);
+        }
+        canvas.drawPath(path, icon);
+        return c.pressed || c.upAt != 0;
     }
 
     private boolean drawKey(Canvas canvas, Cell c, long now) {
         Layouts.Key k = c.key;
         float p = pressAmount(c, now);
         int normal, pressed;
-        int fg = dark ? 0xfff2f2f2 : 0xff1d1d1f;
+        int fg = fg();
         switch (k.kind) {
             case ACCENT:
                 normal = (accent & 0x00ffffff) | 0x99000000;
@@ -414,9 +638,10 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         }
         String label = labelFor(k);
         text.setColor(fg);
-        text.setTextSize(k.kind == Layouts.Kind.FUNCTION ? sp(15) : sp(label.length() > 1 ? 17 : 22));
+        boolean numpad = "num".equals(layout.id);
+        text.setTextSize(k.kind == Layouts.Kind.FUNCTION ? sp(15) : sp(numpad ? 26 : label.length() > 1 ? 17 : 22));
         drawCentered(canvas, label, cx, cy);
-        if (!k.alts.isEmpty() && k.kind == Layouts.Kind.CHAR && !",.".contains(k.label)) {
+        if (!k.alts.isEmpty() && k.kind == Layouts.Kind.CHAR && !",.".contains(k.label) && !numpad) {
             text.setColor(withAlpha(fg, .45f));
             text.setTextSize(sp(10));
             String hint = k.alts.substring(0, k.alts.offsetByCodePoints(0, 1));
@@ -432,9 +657,47 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         float top = Math.max(2 * dp, bottom - bh);
         tmp.set(left, top, left + bw, top + bh);
         painter.draw(canvas, tmp, keyRadius * 1.3f, dark ? 0xf24a4a4d : 0xf7ffffff, painter.bubble, 1f);
-        text.setColor(dark ? 0xfff2f2f2 : 0xff1d1d1f);
+        text.setColor(fg());
         text.setTextSize(sp(30));
         drawCentered(canvas, labelFor(c.key), tmp.centerX(), tmp.centerY());
+    }
+
+    private void drawFloating(Canvas canvas) {
+        text.setTextSize(sp(20));
+        text.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        float tw = text.measureText(floatingText) + 28 * dp, th = 40 * dp;
+        float cx, cy;
+        if (prefs.gestureFloatingDynamic()) { cx = floatX; cy = floatY - 64 * dp; }
+        else { cx = getWidth() / 2f; cy = topPad + toolbarH + th / 2f + 4 * dp; }
+        float left = clamp(cx - tw / 2f, 2 * dp, getWidth() - 2 * dp - tw);
+        float top = Math.max(2 * dp, cy - th / 2f);
+        tmp.set(left, top, left + tw, top + th);
+        painter.draw(canvas, tmp, th / 2f, dark ? 0xf24a4a4d : 0xf7ffffff, painter.bubble, 1f);
+        text.setColor(fg());
+        drawCentered(canvas, floatingText, tmp.centerX(), tmp.centerY());
+        text.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+    }
+
+    private boolean drawTrail(Canvas canvas, long now) {
+        if (trail.isEmpty()) return false;
+        float fade = Math.max(100, prefs.gestureTrailFade());
+        Finger f = topFinger();
+        boolean live = f != null && f.gesture;
+        // drop points that have fully faded
+        while (!trail.isEmpty() && now - trail.get(0)[2] > fade) trail.remove(0);
+        if (trail.isEmpty()) return live;
+        if (!prefs.gestureTrail()) return live;
+        for (int i = 1; i < trail.size(); i++) {
+            float[] a = trail.get(i - 1), b = trail.get(i);
+            if (a[2] < 0 || b[2] < 0) continue; // segment break
+            float age = (now - b[2]) / fade;
+            int alpha = Math.round(230 * Math.max(0f, 1f - age));
+            if (alpha <= 0) continue;
+            trailPaint.setColor((accent & 0x00ffffff) | (alpha << 24));
+            trailPaint.setStrokeWidth(dp * (2.5f + 3f * (1f - age)));
+            canvas.drawLine(a[0], a[1], b[0], b[1], trailPaint);
+        }
+        return true;
     }
 
     private void drawAlternatives(Canvas canvas, Finger f) {
@@ -448,13 +711,13 @@ final class KeyboardView extends View implements PanelBlur.Listener {
                 tmp.set(l + 4 * dp, r.top + 4 * dp, l + cell - 4 * dp, r.bottom - 4 * dp);
                 painter.draw(canvas, tmp, keyRadius, (accent & 0x00ffffff) | 0xe6000000, painter.key, 1f);
             }
-            text.setColor(sel ? 0xffffffff : (dark ? 0xfff2f2f2 : 0xff1d1d1f));
+            text.setColor(sel ? 0xffffffff : fg());
             text.setTextSize(sp(22));
             drawCentered(canvas, applyShift(f.alts.get(i)), l + cell / 2f, r.centerY());
         }
     }
 
-    // ---- icons (drawn as paths in a 24dp box around the center)
+    // ---- key icons
 
     private void drawShift(Canvas canvas, float cx, float cy) {
         path.reset();
@@ -535,42 +798,6 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         canvas.drawLine(cx - 8 * u, cy, cx + 8 * u, cy, icon);
     }
 
-    private void drawToolIcon(Canvas canvas, int tool, float cx, float cy) {
-        float u = dp;
-        path.reset();
-        switch (tool) {
-            case TOOL_SETTINGS:
-                canvas.drawLine(cx - 7 * u, cy - 3.5f * u, cx + 7 * u, cy - 3.5f * u, icon);
-                canvas.drawLine(cx - 7 * u, cy + 3.5f * u, cx + 7 * u, cy + 3.5f * u, icon);
-                icon.setStyle(Paint.Style.FILL_AND_STROKE);
-                canvas.drawCircle(cx - 2.5f * u, cy - 3.5f * u, 2 * u, icon);
-                canvas.drawCircle(cx + 3 * u, cy + 3.5f * u, 2 * u, icon);
-                icon.setStyle(Paint.Style.STROKE);
-                return;
-            case TOOL_PASTE:
-                tmp.set(cx - 6 * u, cy - 6 * u, cx + 6 * u, cy + 8 * u);
-                canvas.drawRoundRect(tmp, 2 * u, 2 * u, icon);
-                tmp.set(cx - 3 * u, cy - 8.5f * u, cx + 3 * u, cy - 4.5f * u);
-                canvas.drawRoundRect(tmp, 1.5f * u, 1.5f * u, icon);
-                return;
-            case TOOL_LEFT:
-                path.moveTo(cx + 2.5f * u, cy - 6 * u);
-                path.lineTo(cx - 3.5f * u, cy);
-                path.lineTo(cx + 2.5f * u, cy + 6 * u);
-                break;
-            case TOOL_RIGHT:
-                path.moveTo(cx - 2.5f * u, cy - 6 * u);
-                path.lineTo(cx + 3.5f * u, cy);
-                path.lineTo(cx - 2.5f * u, cy + 6 * u);
-                break;
-            default:
-                path.moveTo(cx - 6.5f * u, cy - 3 * u);
-                path.lineTo(cx, cy + 3.5f * u);
-                path.lineTo(cx + 6.5f * u, cy - 3 * u);
-        }
-        canvas.drawPath(path, icon);
-    }
-
     // ------------------------------------------------------------------ touch
 
     @SuppressLint("ClickableViewAccessibility")
@@ -600,23 +827,35 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         return true;
     }
 
+    private boolean inStrip(float y) { return y < topPad + toolbarH; }
+
     private void fingerDown(int id, float x, float y) {
         // Fast typing: a new finger commits the character held by the previous one.
         for (int i = 0; i < fingers.size(); i++) {
             Finger other = fingers.valueAt(i);
-            if (!other.done && other.cell != null && other.cell.key != null
+            if (!other.done && !other.gesture && other.cell != null && other.cell.key != null
                     && other.cell.key.kind == Layouts.Kind.CHAR && other.alts == null) {
                 commitFinger(other);
             }
         }
-        Cell cell = hit(x, y);
-        if (cell == null) return;
         Finger f = new Finger();
         f.id = id;
-        f.cell = cell;
-        f.downX = f.lastCursorX = x;
+        f.downX = f.lastX = f.lastCursorX = x;
         f.downY = y;
+        f.downTime = SystemClock.uptimeMillis();
+        f.scrollStart = toolScroll;
+        if (resizeMode && inStrip(y)) {
+            for (Cell c : new Cell[]{resizeMinus, resizePlus, resizeDone})
+                if (distance(c.rect, x, y) < 6 * dp) { f.cell = c; press(c); feedback(c); }
+            if (f.cell != null) fingers.put(id, f);
+            invalidate();
+            return;
+        }
+        Cell cell = hit(x, y);
+        if (cell == null && !inStrip(y)) return;
+        f.cell = cell;
         fingers.put(id, f);
+        if (cell == null) return; // empty strip area: may still be a swipe down
         press(cell);
         feedback(cell);
 
@@ -638,6 +877,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             else if (now - lastShiftTap < DOUBLE_SHIFT_MS) shift = SHIFT_LOCK;
             else shift = shift == SHIFT_ONCE ? SHIFT_OFF : SHIFT_ONCE;
             lastShiftTap = now;
+            actions.onShift();
         }
         scheduleLongPress(f);
         invalidate();
@@ -647,10 +887,11 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         if (f.longPress != null) handler.removeCallbacks(f.longPress);
         f.longPress = null;
         Layouts.Key k = f.cell.key;
+        if (k == null) return;
         boolean hasAlts = k.kind == Layouts.Kind.CHAR && !k.alts.isEmpty();
         if (!hasAlts && k.kind != Layouts.Kind.SPACE && k.code != Layouts.LANG) return;
         f.longPress = () -> {
-            if (f.done || f.cursorMode) return;
+            if (f.done || f.cursorMode || f.gesture) return;
             f.longPressed = true;
             if (hasAlts) openAlternatives(f);
             else {
@@ -684,9 +925,41 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
     }
 
+    private float letterKeyWidth() {
+        for (Cell c : keys) if (c.key.isLetter()) return c.rect.width() + hGap;
+        return 36 * dp;
+    }
+
+    private boolean canStartGesture(Finger f) {
+        if (!prefs.gesture() || !isLetterLayout() || f.cell == null || f.cell.key == null) return false;
+        if (!f.cell.key.isLetter() || f.longPressed || f.alts != null) return false;
+        return f.downTime - lastTapAt >= prefs.gestureCooldown();
+    }
+
     private void fingerMove(int id, float x, float y) {
         Finger f = fingers.get(id);
-        if (f == null || f.done || f.cell == null) return;
+        if (f == null || f.done) return;
+        float dx = x - f.downX, dy = y - f.downY;
+
+        // strip: swipe down hides the keyboard, horizontal drag scrolls the toolbar
+        if (inStrip(f.downY) && (f.cell == null || f.cell.key == null)) {
+            if (prefs.toolbarSwipeDown() && dy > 40 * dp && Math.abs(dy) > Math.abs(dx) * 1.5f) {
+                if (f.cell != null) release(f.cell);
+                f.done = true;
+                actions.onHide();
+                return;
+            }
+            boolean onToolRow = showToolRow() && f.cell != null && f.cell.tool != null && toolCells.contains(f.cell)
+                    || (f.cell == null && showToolRow());
+            if (onToolRow && toolContentW > toolAreaR - toolAreaL && (f.scrolling || Math.abs(dx) > 8 * dp)) {
+                if (!f.scrolling && f.cell != null) release(f.cell);
+                f.scrolling = true;
+                toolScroll = clamp(f.scrollStart - dx, 0, toolContentW - (toolAreaR - toolAreaL));
+                invalidate();
+            }
+            return;
+        }
+        if (f.cell == null) return;
         Layouts.Key k = f.cell.key;
         if (f.alts != null) {
             float cell = f.altRect.width() / f.alts.size();
@@ -696,6 +969,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             return;
         }
         if (k == null) return;
+        if (f.gesture) { gestureMove(f, x, y); return; }
         if (k.kind == Layouts.Kind.SPACE) {
             float step = 9 * dp;
             if (!f.cursorMode && Math.abs(x - f.downX) > 14 * dp) {
@@ -714,6 +988,10 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             return;
         }
         if (k.kind == Layouts.Kind.CHAR && !f.longPressed) {
+            if (canStartGesture(f) && Math.hypot(dx, dy) > letterKeyWidth() * .6f) {
+                startGesture(f, x, y);
+                return;
+            }
             Cell other = hit(x, y);
             if (other != null && other != f.cell && other.key != null && other.key.kind == Layouts.Kind.CHAR) {
                 release(f.cell);
@@ -725,12 +1003,93 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         }
     }
 
+    // ---- gesture typing
+
+    private void startGesture(Finger f, float x, float y) {
+        f.gesture = true;
+        if (f.longPress != null) handler.removeCallbacks(f.longPress);
+        release(f.cell);
+        trail.clear();
+        segXs.clear();
+        segYs.clear();
+        gn = 0;
+        floatingText = null;
+        lastPreviewAt = 0;
+        Map<Character, float[]> centers = new HashMap<>();
+        for (Cell c : keys) {
+            if (!c.key.isLetter()) continue;
+            float[] pos = {c.rect.centerX(), c.rect.centerY()};
+            centers.put(Character.toLowerCase(c.key.label.charAt(0)), pos);
+            for (int i = 0; i < c.key.alts.length(); i++) {
+                char a = c.key.alts.charAt(i);
+                if (Character.isLetter(a) && !centers.containsKey(a)) centers.put(a, pos);
+            }
+        }
+        actions.onGestureStart(centers, letterKeyWidth());
+        addGesturePoint(f.downX, f.downY);
+        addGesturePoint(x, y);
+        invalidate();
+    }
+
+    private void addGesturePoint(float x, float y) {
+        long now = SystemClock.uptimeMillis();
+        trail.add(new float[]{x, y, now});
+        if (gn == gx.length) { gx = java.util.Arrays.copyOf(gx, gn * 2); gy = java.util.Arrays.copyOf(gy, gn * 2); }
+        gx[gn] = x; gy[gn] = y; gn++;
+    }
+
+    private void endSegment() {
+        if (gn >= 2) {
+            segXs.add(java.util.Arrays.copyOf(gx, gn));
+            segYs.add(java.util.Arrays.copyOf(gy, gn));
+        }
+        gn = 0;
+    }
+
+    private void gestureMove(Finger f, float x, float y) {
+        float lx = gn > 0 ? gx[gn - 1] : x, ly = gn > 0 ? gy[gn - 1] : y;
+        if (Math.hypot(x - lx, y - ly) < 3 * dp && gn > 0) return;
+        if (prefs.gestureSpaceAware()) {
+            Cell over = hit(x, y);
+            boolean onSpace = over != null && over.key != null && over.key.kind == Layouts.Kind.SPACE;
+            if (onSpace && !f.overSpace) { endSegment(); trail.add(new float[]{x, y, -1}); }
+            f.overSpace = onSpace;
+            if (onSpace) { trail.add(new float[]{x, y, SystemClock.uptimeMillis()}); invalidate(); return; }
+        }
+        addGesturePoint(x, y);
+        floatX = x;
+        floatY = y;
+        long now = SystemClock.uptimeMillis();
+        if (prefs.gestureFloating() && now - lastPreviewAt > PREVIEW_EVERY_MS && gn >= 3) {
+            lastPreviewAt = now;
+            floatingText = actions.onGestureProgress(gx, gy, gn);
+        }
+        invalidate();
+    }
+
+    private void finishGesture() {
+        endSegment();
+        floatingText = null;
+        if (!segXs.isEmpty()) actions.onGesture(new ArrayList<>(segXs), new ArrayList<>(segYs));
+        segXs.clear();
+        segYs.clear();
+        // keep the trail fading out
+        postInvalidateOnAnimation();
+    }
+
     private void fingerUp(int id, float x, float y) {
         Finger f = fingers.get(id);
         if (f == null) return;
         if (!f.done) {
-            if (f.cell.key == null) {
-                if (f.cell.rect.contains(x, y) || distance(f.cell.rect, x, y) < 12 * dp) runTool(f.cell.tool);
+            if (f.gesture) {
+                f.done = true;
+                finishGesture();
+            } else if (f.cell == null || f.scrolling) {
+                f.done = true;
+            } else if (f.cell.key == null) {
+                if (f.cell.rect.contains(x + (toolCells.contains(f.cell) ? toolScroll : 0), y)
+                        || distance(f.cell.rect, x + (toolCells.contains(f.cell) ? toolScroll : 0), y) < 12 * dp)
+                    runStripCell(f.cell);
             } else {
                 commitFinger(f);
             }
@@ -770,6 +1129,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
                         if (!f.longPressed) actions.onText(" ");
                     } else {
                         emitText(labelFor(k));
+                        lastTapAt = SystemClock.uptimeMillis();
                     }
             }
         }
@@ -782,21 +1142,78 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         if (shift == SHIFT_ONCE && isLetterLayout()) { shift = SHIFT_OFF; invalidate(); }
     }
 
-    private void runTool(int tool) {
-        switch (tool) {
-            case TOOL_SETTINGS: actions.onSettings(); break;
-            case TOOL_PASTE: actions.onPaste(); break;
-            case TOOL_LEFT: actions.onCursor(-1); break;
-            case TOOL_RIGHT: actions.onCursor(1); break;
-            case TOOL_HIDE: actions.onHide(); break;
-            case TOOL_SUGGESTION: case TOOL_SUGGESTION + 1: case TOOL_SUGGESTION + 2:
-                actions.onSuggestion(tool - TOOL_SUGGESTION); break;
+    /** Gesture word committed: shift applies to it like to a typed letter. */
+    String applyGestureShift(String word) {
+        if (word == null || word.isEmpty()) return word;
+        String out = word;
+        if (shift == SHIFT_LOCK) out = word.toUpperCase(locale());
+        else if (shift == SHIFT_ONCE) out = word.substring(0, 1).toUpperCase(locale()) + word.substring(1);
+        if (shift == SHIFT_ONCE) { shift = SHIFT_OFF; invalidate(); }
+        return out;
+    }
+
+    private void runStripCell(Cell c) {
+        switch (c.id) {
+            case CELL_TOGGLE:
+                expanded = !expanded;
+                invalidate();
+                return;
+            case CELL_RESIZE_DONE:
+                resizeMode = false;
+                setToolState(ToolKey.RESIZE, false);
+                readDimensions();
+                requestLayout();
+                relayout();
+                return;
+            case CELL_RESIZE_MINUS:
+            case CELL_RESIZE_PLUS: {
+                int pct = prefs.keyHeight() + (c.id == CELL_RESIZE_PLUS ? 5 : -5);
+                prefs.setInt(Prefs.KEY_HEIGHT, Math.max(70, Math.min(140, pct)));
+                readDimensions();
+                requestLayout();
+                relayout();
+                return;
+            }
+            case CELL_ONEHAND_SWAP:
+                prefs.setInt(Prefs.ONE_HANDED, prefs.oneHanded() == 1 ? 2 : 1);
+                relayout();
+                return;
+            case CELL_ONEHAND_EXIT:
+                prefs.setInt(Prefs.ONE_HANDED, 0);
+                setToolState(ToolKey.ONE_HANDED, false);
+                relayout();
+                return;
             default: break;
+        }
+        if (c.id >= CELL_SLOT && c.id < CELL_SLOT + 10) { actions.onSuggestion(c.id - CELL_SLOT); return; }
+        if (c.tool != null) {
+            switch (c.tool) {
+                case NUMPAD:
+                    layout = "num".equals(layout.id) ? letters() : Layouts.numpad();
+                    relayout();
+                    break;
+                case ONE_HANDED: {
+                    boolean on = prefs.oneHanded() == 0;
+                    prefs.setInt(Prefs.ONE_HANDED, on ? 1 : 0);
+                    setToolState(ToolKey.ONE_HANDED, on);
+                    relayout();
+                    break;
+                }
+                case RESIZE:
+                    resizeMode = true;
+                    setToolState(ToolKey.RESIZE, true);
+                    readDimensions();
+                    requestLayout();
+                    relayout();
+                    break;
+                default:
+                    actions.onToolKey(c.tool);
+            }
         }
     }
 
     private void clearFinger(Finger f) {
-        release(f.cell);
+        if (f.cell != null) release(f.cell);
         cancelCallbacks(f);
         f.done = true;
     }
@@ -810,6 +1227,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     private void cancelAllFingers() {
         for (int i = 0; i < fingers.size(); i++) clearFinger(fingers.valueAt(i));
         fingers.clear();
+        floatingText = null;
         invalidate();
     }
 
@@ -822,7 +1240,8 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         Finger best = null;
         for (int i = 0; i < fingers.size(); i++) {
             Finger f = fingers.valueAt(i);
-            if (!f.done && (best == null || f.cell.downAt >= best.cell.downAt)) best = f;
+            if (f.done || f.cell == null) continue;
+            if (best == null || f.downTime >= best.downTime) best = f;
         }
         return best;
     }
@@ -839,21 +1258,37 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         postInvalidateOnAnimation();
     }
 
-    /** Toolbar hit test first, then nearest key in the touched row (gaps and margins included). */
+    /** Strip parts first, then the nearest key in the touched row (gaps and margins included). */
     private Cell hit(float x, float y) {
-        if (y < topPad + toolbarH && suggestions != null) {
-            int i = (int) Math.floor((x - sidePad) / ((getWidth() - 2 * sidePad) / 3f));
-            i = Math.max(0, Math.min(2, i));
-            if (suggestions[i] != null) return slotCells[i];
-            if (y < topPad + toolbarH - 4 * dp) return null;
-        } else if (y < topPad + toolbarH) {
-            Cell best = null;
-            float bestD = 10 * dp;
-            for (Cell t : tools) {
-                float d = distance(t.rect, x, y);
-                if (d <= bestD) { bestD = d; best = t; }
+        if (inStrip(y)) {
+            if (toolbarH == 0) return null;
+            if (Prefs.MODE_EXPANDABLE.equals(mode) && distance(toggleCell.rect, x, y) < 6 * dp) return toggleCell;
+            if (showSlots()) {
+                for (Cell c : pinnedCells) if (distance(c.rect, x, y) < 6 * dp) return c;
+                if (suggestions != null) {
+                    for (int i = 0; i < slotCells.length && i < suggestions.length; i++) {
+                        Cell c = slotCells[i];
+                        if (x >= c.rect.left - 2 * dp && x <= c.rect.right + 2 * dp)
+                            return suggestions[i] != null ? c : null;
+                    }
+                }
             }
-            if (best != null || y < topPad + toolbarH - 4 * dp) return best;
+            if (showToolRow()) {
+                float sx = x + toolScroll;
+                Cell best = null;
+                float bestD = 10 * dp;
+                for (Cell t : toolCells) {
+                    float d = distance(t.rect, sx, y);
+                    if (d <= bestD) { bestD = d; best = t; }
+                }
+                return best;
+            }
+            return null;
+        }
+        if (prefs.oneHanded() != 0) {
+            if (distance(swapCell.rect, x, y) < 8 * dp) return swapCell;
+            if (distance(exitCell.rect, x, y) < 8 * dp) return exitCell;
+            if (x < keysLeft - hGap || x > keysRight + hGap) return null;
         }
         int rows = layout.rows.size();
         int row = (int) Math.floor((y - topPad - toolbarH) / rowPitch);
@@ -883,6 +1318,8 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
     // ------------------------------------------------------------------ helpers
 
+    private Locale locale() { return "en".equals(lang) ? Locale.ENGLISH : Locale.forLanguageTag("ru"); }
+
     private String labelFor(Layouts.Key k) {
         if (k.code == Layouts.ALPHA) return "en".equals(lang) ? "ABC" : "АБВ";
         return k.kind == Layouts.Kind.CHAR ? applyShift(k.label) : k.label;
@@ -890,7 +1327,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
 
     private String applyShift(String s) {
         if (shift == SHIFT_OFF || !isLetterLayout()) return s;
-        return s.toUpperCase("en".equals(lang) ? Locale.ENGLISH : Locale.forLanguageTag("ru"));
+        return s.toUpperCase(locale());
     }
 
     private void drawCentered(Canvas canvas, String s, float cx, float cy) {

@@ -21,10 +21,17 @@ final class WordDictionary {
     private final int[] start;       // start of word i in data; start[n] = data.length()
     private final byte[] freq;       // 0..255 stored as signed byte
     private final Map<String, String[]> bigrams;
+    private final java.util.BitSet offensive;
+    /** lowercase source → {target, "15" for always-autocorrect} */
+    final Map<String, String[]> shortcuts = new HashMap<>();
 
-    private WordDictionary(String lang, String data, int[] start, byte[] freq, Map<String, String[]> bigrams) {
-        this.lang = lang; this.data = data; this.start = start; this.freq = freq; this.bigrams = bigrams;
+    private WordDictionary(String lang, String data, int[] start, byte[] freq, java.util.BitSet offensive,
+                           Map<String, String[]> bigrams) {
+        this.lang = lang; this.data = data; this.start = start; this.freq = freq;
+        this.offensive = offensive; this.bigrams = bigrams;
     }
+
+    boolean isOffensive(int i) { return offensive.get(i); }
 
     int size() { return freq.length; }
     String word(int i) { return data.substring(start[i], start[i + 1]); }
@@ -92,7 +99,21 @@ final class WordDictionary {
         InputStream bigramStream = null;
         try { bigramStream = context.getAssets().open("bigrams_" + lang + ".dat"); }
         catch (java.io.IOException noBigrams) { /* none for this language */ }
-        return load(lang, context.getAssets().open("dict_" + lang + ".dat"), bigramStream);
+        WordDictionary d = load(lang, context.getAssets().open("dict_" + lang + ".dat"), bigramStream);
+        try { d.loadShortcuts(context.getAssets().open("shortcuts_" + lang + ".dat")); }
+        catch (java.io.IOException none) { /* optional */ }
+        return d;
+    }
+
+    void loadShortcuts(InputStream stream) throws java.io.IOException {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(
+                new GZIPInputStream(stream), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = in.readLine()) != null) {
+                String[] p = line.split("\t");
+                if (p.length == 3) shortcuts.put(p[0].toLowerCase(), new String[]{p[1], p[2]});
+            }
+        }
     }
 
     /** Loads from gzip streams (closes them). */
@@ -100,6 +121,7 @@ final class WordDictionary {
         StringBuilder sb = new StringBuilder(1 << 21);
         int[] starts = new int[1 << 16];
         byte[] freqs = new byte[1 << 16];
+        java.util.BitSet offensive = new java.util.BitSet();
         int n = 0;
         try (InputStream raw = dictStream;
              BufferedReader in = new BufferedReader(new InputStreamReader(
@@ -112,8 +134,9 @@ final class WordDictionary {
                     starts = java.util.Arrays.copyOf(starts, starts.length * 2);
                     freqs = java.util.Arrays.copyOf(freqs, freqs.length * 2);
                 }
-                int f = 0;
-                for (int k = 0; k < tab; k++) f = f * 10 + (line.charAt(k) - '0');
+                int f = 0, k0 = 0;
+                if (line.charAt(0) == '!') { offensive.set(n); k0 = 1; }
+                for (int k = k0; k < tab; k++) f = f * 10 + (line.charAt(k) - '0');
                 freqs[n] = (byte) f;
                 starts[n] = sb.length();
                 sb.append(line, tab + 1, line.length());
@@ -133,6 +156,6 @@ final class WordDictionary {
             }
         }
         return new WordDictionary(lang, sb.toString(), java.util.Arrays.copyOf(starts, n + 1),
-                java.util.Arrays.copyOf(freqs, n), bigrams);
+                java.util.Arrays.copyOf(freqs, n), offensive, bigrams);
     }
 }

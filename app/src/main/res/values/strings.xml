@@ -2,6 +2,9 @@
 <resources>
     <string name="app_name">Glass Keyboard</string>
     <string name="ime_name">Glass Keyboard</string>
+    <string name="spell_name">Glass Keyboard: проверка правописания</string>
+    <string name="subtype_ru">Русский</string>
+    <string name="subtype_en">English</string>
     <string name="settings_about">Клавиатура с эффектами материала ColorOS 17: размытая панель со скруглёнными углами, стеклянные клавиши с внутренним свечением и градиентной кромкой, круглые кнопки панели инструментов.</string>
     <string name="status_disabled">Шаг 1: включите клавиатуру в системных настройках.</string>
     <string name="status_enabled">Шаг 2: выберите Glass Keyboard как текущую клавиатуру.</string>

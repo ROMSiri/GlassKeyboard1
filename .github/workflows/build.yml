@@ -19,6 +19,14 @@ jobs:
           SDKM=$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1)/sdkmanager
           yes | $SDKM --licenses > /dev/null || true
           $SDKM "platforms;android-37" "platform-tools" > /dev/null || $SDKM --list | grep -i "platforms;android-3"
+      - name: Emoji keywords from Unicode CLDR
+        run: |
+          mkdir -p /tmp/cldr
+          for l in ru en; do
+            curl -fsSL "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-annotations-full/annotations/$l/annotations.json" -o /tmp/cldr/$l.json || echo "no CLDR for $l"
+          done
+          python3 tools/emoji/build_emoji.py /tmp/cldr app/src/main/assets || echo "emoji index skipped"
+          ls -la app/src/main/assets
       - name: Build
         run: |
           chmod +x gradlew
