@@ -459,6 +459,7 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
     /** Cursor placed in or right after a word: offer alternatives to replace it. */
     private void tryRecorrect() {
         recorrectWord = null;
+        if (view == null) return;
         if (!wordMode || !prefs.spellcheckSuggest()) { showStrip(); return; }
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;

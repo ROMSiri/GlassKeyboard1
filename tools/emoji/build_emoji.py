@@ -21,7 +21,10 @@ for lang in ('ru', 'en'):
         print('missing', path); continue
     data = json.load(open(path, encoding='utf-8'))['annotations']['annotations']
     index = {}
+    names = {}  # emoji -> its spoken name
     for emoji, ann in data.items():
+        tts = (ann.get('tts') or [''])[0].lower().replace('ё', 'е').strip()
+        names[emoji] = tts
         if norm(emoji) not in rank: continue          # only emojis the keyboard knows (no rare symbols)
         words = set()
         # CLDR keywords as they are; the spoken name only when it is a single word
@@ -35,6 +38,12 @@ for lang in ('ru', 'en'):
             if w: index.setdefault(w, set()).add(emoji)
     with gzip.open(os.path.join(out, f'emoji_{lang}.dat'), 'wt', encoding='utf-8', compresslevel=9) as fh:
         for w in sorted(index):
-            es = sorted(index[w], key=lambda e: rank.get(norm(e), 1 << 20))[:8]
+            def prio(e):
+                n = names.get(e, '')
+                # own name is the word > name starts with it > single symbol > rest
+                p = 0 if n == w else 1 if n.startswith(w) or n.endswith(' ' + w) else 2
+                if p == 2 and len(norm(e)) == 1: p = 1.5
+                return (p, rank.get(norm(e), 1 << 20))
+            es = sorted(index[w], key=prio)[:8]
             fh.write(w + '\t' + ' '.join(es) + '\n')
     print(lang, len(index), 'keywords')
