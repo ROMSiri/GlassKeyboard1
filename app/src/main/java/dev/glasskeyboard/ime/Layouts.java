@@ -86,29 +86,19 @@ final class Layouts {
     }
 
     /**
-     * 26 letters like QWERTY (9 / 9 / 8). The seven rarest letters live under a neighbour:
-     * long-press shows them, the small hint in the key corner says which.
-     *   ё э → е,  ю → у,  щ → ш,  ф → в,  ц → ч,  ъ → ь
+     * Same grid as QWERTY: 10 / 9 / 7 letters, Shift and Delete 1.5 wide, middle row centred.
+     * The rarest letter(s) of each ЙЦУКЕН row go under a neighbour (long-press, hint in the corner):
+     *   щ → ш,  ф → в,  э → ж (and е),  ё → е,  ч → с,  ю → б,  ъ → ь
      */
     static Layout russian() {
-        float wide = 10f / 9f; // rows of nine keys fill the full width
         return new Layout("ru")
-                .row(w(wide, ch("й", "1"), ch("у", "ю2"), ch("к", "3"), ch("е", "ёэ4"), ch("н", "5"),
-                        ch("г", "6"), ch("ш", "щ7"), ch("з", "8"), ch("х", "90")))
-                .row(w(wide, ch("ы"), ch("в", "ф"), ch("а"), ch("п"), ch("р"), ch("о"), ch("л"),
-                        ch("д"), ch("ж")))
-                .row(fn("", SHIFT, 1f), ch("я"), ch("ч", "ц"), ch("с"), ch("м"), ch("и"), ch("т"),
-                        ch("ь", "ъ"), ch("б"), fn("", DELETE, 1f))
+                .row(ch("й", "1"), ch("ц", "2"), ch("у", "3"), ch("к", "4"), ch("е", "ёэ5"),
+                        ch("н", "6"), ch("г", "7"), ch("ш", "щ8"), ch("з", "9"), ch("х", "0"))
+                .row(ch("ы"), ch("в", "ф"), ch("а"), ch("п"), ch("р"), ch("о"), ch("л"),
+                        ch("д"), ch("ж", "э"))
+                .row(fn("", SHIFT, 1.5f), ch("я"), ch("с", "ч"), ch("м"), ch("и"), ch("т"),
+                        ch("ь", "ъ"), ch("б", "ю"), fn("", DELETE, 1.5f))
                 .row(bottomRow("?123", SYMBOLS, 1f));
-    }
-
-    private static Key[] w(float weight, Key... keys) {
-        Key[] out = new Key[keys.length];
-        for (int i = 0; i < keys.length; i++) {
-            Key k = keys[i];
-            out[i] = new Key(k.label, k.code, k.alts, weight, k.kind);
-        }
-        return out;
     }
 
     static Layout english() {
