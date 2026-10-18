@@ -194,11 +194,11 @@ public final class SettingsActivity extends Activity {
         content.addView(status, sp);
 
         section("Настройки");
-        link(Glyph.CORRECTION, BLUE, "Исправление текста", "Автоисправление, подсказки, эмодзи", () -> open(CORRECTION));
-        link(Glyph.TOOLBAR, ORANGE, "Панель инструментов", "Режим, клавиши, закреплённые", () -> open(TOOLBAR));
-        link(Glyph.GESTURE, PURPLE, "Непрерывный ввод", "Набор слов жестами", () -> open(GESTURE));
-        link(Glyph.BLUR, TEAL, "Внешний вид и отклик", "Стекло, высота, вибрация, звук", () -> open(APPEARANCE));
-        link(Glyph.BOOK, GREEN, "Личный словарь", "Выученные и добавленные слова", () -> open(PERSONAL));
+        nav(Glyph.CORRECTION, BLUE, "Исправление текста", "Автоисправление, подсказки, эмодзи", () -> open(CORRECTION));
+        nav(Glyph.TOOLBAR, ORANGE, "Панель инструментов", "Режим, клавиши, закреплённые", () -> open(TOOLBAR));
+        nav(Glyph.GESTURE, PURPLE, "Непрерывный ввод", "Набор слов жестами", () -> open(GESTURE));
+        nav(Glyph.BLUR, TEAL, "Внешний вид и отклик", "Стекло, высота, вибрация, звук", () -> open(APPEARANCE));
+        nav(Glyph.BOOK, GREEN, "Личный словарь", "Выученные и добавленные слова", () -> open(PERSONAL));
 
         section("Проверка");
         EditText test = field("Попробуйте клавиатуру здесь", 3);
@@ -230,7 +230,7 @@ public final class SettingsActivity extends Activity {
     private void buildCorrection() {
         header("Исправление текста");
         section(null);
-        link(Glyph.BOOK, GREEN, "Личный словарь", "Ваши слова", () -> open(PERSONAL));
+        nav(Glyph.BOOK, GREEN, "Личный словарь", "Слова, которые клавиатура запомнила или вы добавили", () -> open(PERSONAL));
 
         section("Исправления");
         toggle(Glyph.SHIELD, RED, Prefs.BLOCK_OFFENSIVE, "Блокировать нецензурные слова",
@@ -348,7 +348,7 @@ public final class SettingsActivity extends Activity {
             });
             footnote("Постоянная кнопка видна в режиме «Только подсказки».");
             section("Для опытных");
-            link(Glyph.CODE, GRAY, "Коды клавиш панели", "Своя клавиша или текст", () -> open(CUSTOM_CODES));
+            nav(Glyph.CODE, GRAY, "Коды клавиш панели", "Своя клавиша Android или текст для кнопки", () -> open(CUSTOM_CODES));
         }
     }
 
@@ -713,6 +713,16 @@ public final class SettingsActivity extends Activity {
         }
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         return row;
+    }
+
+    /** Row that opens a screen: summary under the title, chevron on the right. */
+    private void nav(Glyph g, int color, String titleText, String summary, Runnable action) {
+        LinearLayout row = row(g, color, titleText, summary);
+        ImageView chev = new ImageView(this);
+        chev.setImageDrawable(lineIcon(0, subColor, false));
+        row.addView(chev, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        row.setOnClickListener(v -> action.run());
+        addRow(row);
     }
 
     private void link(Glyph g, int color, String titleText, String value, Runnable action) {
