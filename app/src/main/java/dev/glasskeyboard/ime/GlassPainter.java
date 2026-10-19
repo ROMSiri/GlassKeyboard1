@@ -37,6 +37,7 @@ final class GlassPainter {
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint rimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF tmp = new RectF();
+    private final android.graphics.Path rimPath = new android.graphics.Path();
 
     final Style key = new Style();
     final Style round = new Style();
@@ -65,30 +66,30 @@ final class GlassPainter {
     void setDark(boolean dark) {
         // Keys: values follow the ColorOS 17 style-2 key (white inner light + white rim).
         key.exponent = 2.6f;
-        key.glowAlpha = dark ? .10f : .24f;
+        key.glowAlpha = 0f;   // flat keys (no inner light / rim)
         key.glowWidth = 22f * density;
         key.glowOffsetY = -3.5f * density;
         key.glowScaleX = 1.35f;
         key.glowScaleY = 1.12f;
-        key.edgeAlpha = dark ? .22f : .75f;
+        key.edgeAlpha = 0f;
         key.edgeWidth = 1.4f * density;
         key.edgeFloor = .22f;
 
         // Round toolbar buttons: stronger, wider inner light, like the Xiaobu toolbar variant.
         round.exponent = 2f;
-        round.glowAlpha = dark ? .14f : .26f;
+        round.glowAlpha = 0f;
         round.glowWidth = 16f * density;
         round.glowOffsetY = -2.5f * density;
         round.glowScaleX = 1.25f;
         round.glowScaleY = 1.2f;
-        round.edgeAlpha = dark ? .30f : .9f;
+        round.edgeAlpha = 0f;
         round.edgeWidth = 1.3f * density;
         round.edgeFloor = .25f;
 
         // Panel: rim only, lit from the top, drawn additively.
         panel.exponent = 3f;
         panel.glowAlpha = 0f;
-        panel.edgeAlpha = dark ? .28f : .7f;
+        panel.edgeAlpha = dark ? .45f : .9f;
         panel.edgeWidth = 1.6f * density;
         panel.edgeFloor = .05f;
         panel.lightX = 0f;
@@ -96,12 +97,12 @@ final class GlassPainter {
 
         // Key preview bubble.
         bubble.exponent = 2.6f;
-        bubble.glowAlpha = dark ? .10f : .22f;
+        bubble.glowAlpha = 0f;
         bubble.glowWidth = 26f * density;
         bubble.glowOffsetY = -4f * density;
         bubble.glowScaleX = 1.3f;
         bubble.glowScaleY = 1.1f;
-        bubble.edgeAlpha = dark ? .3f : .8f;
+        bubble.edgeAlpha = 0f;
         bubble.edgeWidth = 1.4f * density;
         bubble.edgeFloor = .25f;
     }
@@ -136,22 +137,29 @@ final class GlassPainter {
     }
 
     /** Additive rim along the top of the docked panel; bottom corners are clipped away. */
+    /**
+     * Thin white line along the top edge of the panel that follows the rounded top corners and
+     * fades out down the sides.
+     */
     void drawPanelRim(Canvas canvas, float width, float height, float topRadius) {
-        if (shader != null && Build.VERSION.SDK_INT >= 33) {
-            int save = canvas.save();
-            canvas.clipRect(0f, 0f, width, height);
-            shaderPaint.setBlendMode(BlendMode.PLUS);
-            tmp.set(0f, 0f, width, height + topRadius * 2f);
-            draw(canvas, tmp, topRadius, Color.TRANSPARENT, panel, 1f);
-            shaderPaint.setBlendMode(null);
-            canvas.restoreToCount(save);
-        } else {
-            rimPaint.setShader(null);
-            rimPaint.setStrokeWidth(density);
-            rimPaint.setColor(Color.argb(Math.round(255 * panel.edgeAlpha * .6f), 255, 255, 255));
-            tmp.set(density * .5f, density * .5f, width - density * .5f, height + topRadius * 2f);
-            canvas.drawRoundRect(tmp, topRadius, topRadius, rimPaint);
-        }
+        float sw = 1.2f * density, h = sw / 2f;
+        float r = Math.max(0f, topRadius - h);
+        float fadeTo = Math.min(height, Math.max(topRadius * 1.6f, 24f * density));
+        android.graphics.Path p = rimPath;
+        p.reset();
+        p.moveTo(h, fadeTo);
+        p.lineTo(h, h + r);
+        if (r > 0f) p.arcTo(h, h, h + 2 * r, h + 2 * r, 180f, 90f, false);
+        p.lineTo(width - h - r, h);
+        if (r > 0f) p.arcTo(width - h - 2 * r, h, width - h, h + 2 * r, 270f, 90f, false);
+        p.lineTo(width - h, fadeTo);
+        int top = Color.argb(Math.round(255 * panel.edgeAlpha), 255, 255, 255);
+        rimPaint.setShader(new LinearGradient(0f, 0f, 0f, fadeTo,
+                new int[]{top, top, top & 0x00ffffff},
+                new float[]{0f, Math.min(.95f, (topRadius * .9f) / fadeTo), 1f}, Shader.TileMode.CLAMP));
+        rimPaint.setStrokeWidth(sw);
+        canvas.drawPath(p, rimPaint);
+        rimPaint.setShader(null);
     }
 
     private void drawFallback(Canvas canvas, RectF b, float radius, int fill, Style style, float alpha) {

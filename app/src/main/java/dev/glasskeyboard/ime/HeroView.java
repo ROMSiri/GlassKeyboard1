@@ -82,7 +82,10 @@ final class HeroView extends View {
         r.set(10 * dp, top, w - 10 * dp, h + rad);
         paint.setColor(PanelBlur.tint(dark, 72));
         c.drawRoundRect(r, rad, rad, paint);
-        painter.drawPanelRim(c, w, h, 0);
+        c.save();
+        c.translate(r.left, r.top);
+        painter.drawPanelRim(c, r.width(), h - top, rad);
+        c.restore();
         float padX = 18 * dp, kw = (w - 2 * padX) / 10f, kh = 36 * dp, gap = 4 * dp, y = top + 14 * dp;
         text.setTextSize(15 * dp);
         text.setTypeface(Typeface.DEFAULT);
