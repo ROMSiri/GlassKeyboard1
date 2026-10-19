@@ -74,6 +74,17 @@ final class Layouts {
         return out;
     }
 
+    /** Letters: no comma key — comma is the first long-press choice on the period; wide Enter. */
+    private static Key[] letterBottomRow() {
+        return new Key[]{
+                fn("?123", SYMBOLS, 1.45f),
+                fn("", LANG, 1.0f),
+                new Key("", SPACE, "", 4.55f, Kind.SPACE),
+                ch(".", ",?!…:;"),
+                new Key("", ENTER, "", 2.0f, Kind.ACCENT),
+        };
+    }
+
     private static Key[] bottomRow(String toggleLabel, int toggleCode, float scale) {
         return new Key[]{
                 fn(toggleLabel, toggleCode, 1.45f * scale),
@@ -98,7 +109,7 @@ final class Layouts {
                         ch("д"), ch("ж", "э"))
                 .row(fn("", SHIFT, 1.5f), ch("я"), ch("с", "ч"), ch("м"), ch("и"), ch("т"),
                         ch("ь", "ъ"), ch("б", "ю"), fn("", DELETE, 1.5f))
-                .row(bottomRow("?123", SYMBOLS, 1f));
+                .row(letterBottomRow());
     }
 
     static Layout english() {
@@ -106,7 +117,7 @@ final class Layouts {
                 .row(chars("qwertyuiop", "1234567890"))
                 .row(chars("asdfghjkl", null))
                 .row(concat(prepend(fn("", SHIFT, 1.5f), chars("zxcvbnm", null)), fn("", DELETE, 1.5f)))
-                .row(bottomRow("?123", SYMBOLS, 1f));
+                .row(letterBottomRow());
     }
 
     static Layout symbols() {

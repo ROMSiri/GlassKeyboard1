@@ -599,8 +599,9 @@ final class KeyboardView extends View implements PanelBlur.Listener {
                 break;
             case FUNCTION:
                 boolean active = k.code == Layouts.SHIFT && shift != SHIFT_OFF;
-                normal = active ? (dark ? 0x40ffffff : 0xd9ffffff) : (dark ? 0x14ffffff : 0x4dffffff);
-                pressed = dark ? 0x3dffffff : 0x85bbbec2;
+                // service keys are darker than letter keys
+                normal = active ? (dark ? 0x40ffffff : 0xd9ffffff) : (dark ? 0x4d000000 : 0x8cb3b8c2);
+                pressed = dark ? 0x3dffffff : 0xb39aa0ab;
                 break;
             default:
                 normal = dark ? 0x26ffffff : 0x8affffff;
@@ -637,11 +638,13 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         boolean numpad = "num".equals(layout.id);
         text.setTextSize(k.kind == Layouts.Kind.FUNCTION ? sp(15) : sp(numpad ? 26 : label.length() > 1 ? 17 : 22));
         drawCentered(canvas, label, cx, cy);
-        if (!k.alts.isEmpty() && k.kind == Layouts.Kind.CHAR && !",.".contains(k.label) && !numpad) {
-            text.setColor(withAlpha(fg, .45f));
-            text.setTextSize(sp(10));
+        if (!k.alts.isEmpty() && k.kind == Layouts.Kind.CHAR && !numpad) {
             String hint = k.alts.substring(0, k.alts.offsetByCodePoints(0, 1));
-            canvas.drawText(hint, r.right - 7 * dp, r.top + 12 * dp, text);
+            if (!hint.equals(k.label)) {   // e.g. "," on the period key
+                text.setColor(withAlpha(fg, .45f));
+                text.setTextSize(sp(10));
+                canvas.drawText(hint, r.right - 7 * dp, r.top + 12 * dp, text);
+            }
         }
     }
 
