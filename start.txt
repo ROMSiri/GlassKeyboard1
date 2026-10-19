@@ -1,0 +1,45 @@
+Unknown input method dev.glasskeyboard.ime/.GlassKeyboardService cannot be enabled for user #0
+Input method dev.glasskeyboard.ime/.GlassKeyboardService: now enabled for user #0
+Input method dev.glasskeyboard.ime/.GlassKeyboardService selected for user #0
+Starting: Intent { act=android.intent.action.INSERT typ=vnd.android.cursor.dir/contact }
+Status: ok
+LaunchState: WARM
+Activity: com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity
+TotalTime: 2248
+WaitTime: 2350
+Complete
+Starting: Intent { act=android.settings.APP_SEARCH_SETTINGS }
+Status: ok
+LaunchState: WARM
+Activity: com.google.android.settings.intelligence/.modules.search.SearchActivity
+TotalTime: 1509
+WaitTime: 1514
+Complete
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: WARM
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 1235
+WaitTime: 1397
+Complete
+Starting: Intent { act=android.intent.action.INSERT typ=vnd.android.cursor.dir/contact }
+Status: ok
+LaunchState: WARM
+Activity: com.google.android.contacts/com.google.android.apps.contacts.editor.LegacyContactEditorActivity
+TotalTime: 1440
+WaitTime: 1546
+Complete
+Starting: Intent { act=android.settings.APP_SEARCH_SETTINGS }
+Status: ok
+LaunchState: WARM
+Activity: com.google.android.settings.intelligence/.modules.search.SearchActivity
+TotalTime: 1454
+WaitTime: 1468
+Complete
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: WARM
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 638
+WaitTime: 753
+Complete
