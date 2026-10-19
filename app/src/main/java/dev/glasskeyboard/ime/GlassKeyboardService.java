@@ -121,9 +121,11 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
     /** Light keyboard in light apps, dark in dark ones; home screen follows the system. */
     private void applyTheme() {
         if (view == null) return;
-        boolean d = prefs.appTheme() ? appTheme.isDark(themePkg) : AppTheme.systemDark(this);
+        Boolean picked = prefs.themeFor(themePkg);
+        boolean d = picked != null ? picked
+                : prefs.appTheme() ? appTheme.isDark(themePkg) : AppTheme.systemDark(this);
         boolean changed = d != view.isDark();
-        view.setDark(d, prefs.appTheme());
+        view.setDark(d, prefs.appTheme() || picked != null);
         if (changed) bindBlur();
     }
 
@@ -867,6 +869,13 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
                 startActivity(new Intent(this, SettingsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 return;
             case HIDE: requestHideSelf(0); return;
+            case THEME: {
+                boolean d = !view.isDark();
+                prefs.setThemeFor(themePkg, d);
+                applyTheme();
+                toast(d ? "Тёмная клавиатура в этом приложении" : "Светлая клавиатура в этом приложении");
+                return;
+            }
             case VOICE: startVoice(); return;
             case INCOGNITO: {
                 boolean on = !prefs.incognito();

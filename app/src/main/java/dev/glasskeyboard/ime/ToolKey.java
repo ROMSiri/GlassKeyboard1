@@ -36,12 +36,13 @@ enum ToolKey {
     RESIZE("Изменить высоту"),
     INCOGNITO("Инкогнито (не запоминать слова)"),
     AUTOCORRECT("Автоисправление вкл/выкл"),
+    THEME("Светлая/тёмная для этого приложения"),
     HIDE("Скрыть клавиатуру");
 
     final String title;
     ToolKey(String title) { this.title = title; }
 
-    static final ToolKey[] DEFAULT_ENABLED = {SETTINGS, VOICE, UNDO, REDO, SELECT_WORD, COPY, PASTE, LEFT, RIGHT, RESIZE, HIDE};
+    static final ToolKey[] DEFAULT_ENABLED = {SETTINGS, VOICE, UNDO, REDO, SELECT_WORD, COPY, PASTE, LEFT, RIGHT, RESIZE, THEME, HIDE};
     static final ToolKey DEFAULT_PERSISTENT = VOICE;
 
     /** "NAME:true;NAME:false;..." – order and on/off. */
@@ -55,6 +56,8 @@ enum ToolKey {
                     if (!out.contains(k) && (!enabledOnly || kv.length < 2 || Boolean.parseBoolean(kv[1]))) out.add(k);
                 } catch (IllegalArgumentException ignored) { }
             }
+            // keys added in an update are on by default for already saved toolbars
+            if (enabledOnly && !pref.contains(THEME.name() + ":")) out.add(THEME);
         }
         return out;
     }
@@ -184,6 +187,15 @@ enum ToolKey {
                 path.lineTo(cx + 4.5f * u, cy + 4 * u);
                 path.lineTo(cx + 9 * u, cy - 3 * u);
                 break;
+            case THEME: {
+                c.drawCircle(cx, cy, 7.5f * u, p);
+                Paint.Style st = p.getStyle();
+                p.setStyle(Paint.Style.FILL);
+                tmp.set(cx - 7.5f * u, cy - 7.5f * u, cx + 7.5f * u, cy + 7.5f * u);
+                c.drawArc(tmp, -90, 180, true, p);
+                p.setStyle(st);
+                break;
+            }
             case HIDE:
             default:
                 path.moveTo(cx - 6.5f * u, cy - 3 * u);

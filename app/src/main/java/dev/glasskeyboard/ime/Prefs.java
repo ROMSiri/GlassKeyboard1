@@ -61,6 +61,13 @@ final class Prefs {
     boolean preview() { return get(PREVIEW, true); }
     boolean blur() { return get(BLUR, true); }
     boolean appTheme() { return get(APP_THEME, true); }
+    /** Theme the user picked for one app with the toolbar button: TRUE dark, FALSE light, null auto. */
+    Boolean themeFor(String pkg) {
+        if (pkg == null) return null;
+        String v = getString("theme_app_" + pkg, null);
+        return v == null ? null : "dark".equals(v);
+    }
+    void setThemeFor(String pkg, boolean dark) { if (pkg != null) setString("theme_app_" + pkg, dark ? "dark" : "light"); }
     int opacity() { return getInt(OPACITY, 90); }
     int bottomOffset() { return getInt(BOTTOM_OFFSET, 14); }
     int keyHeight() { return getInt(KEY_HEIGHT, 100); }          // percent
