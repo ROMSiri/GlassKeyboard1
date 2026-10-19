@@ -6,7 +6,7 @@ import android.content.SharedPreferences;
 /** User settings shared by the keyboard service and the settings screens. */
 final class Prefs {
     // appearance & feedback
-    static final String VIBRATE = "vibrate", SOUND = "sound", PREVIEW = "preview", BLUR = "blur",
+    static final String VIBRATE = "vibrate", SOUND = "sound", PREVIEW = "preview", BLUR = "blur", APP_THEME = "app_theme",
             OPACITY = "panel_opacity", BOTTOM_OFFSET = "bottom_offset", KEY_HEIGHT = "key_height",
             ONE_HANDED = "one_handed", LANGUAGE = "language", BLUR_STATUS = "blur_status",
             USER_DICT_REV = "user_dict_rev";
@@ -60,6 +60,7 @@ final class Prefs {
     boolean sound() { return get(SOUND, false); }
     boolean preview() { return get(PREVIEW, true); }
     boolean blur() { return get(BLUR, true); }
+    boolean appTheme() { return get(APP_THEME, true); }
     int opacity() { return getInt(OPACITY, 90); }
     int bottomOffset() { return getInt(BOTTOM_OFFSET, 14); }
     int keyHeight() { return getInt(KEY_HEIGHT, 100); }          // percent

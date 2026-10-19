@@ -310,6 +310,9 @@ public final class SettingsActivity extends Activity {
         pp.setMargins(dp(16), dp(2), dp(16), dp(10));
         overlay.addView(preview, pp);
         header("Внешний вид и отклик");
+        section("Тема");
+        toggle(Glyph.OPACITY, PURPLE, Prefs.APP_THEME, "Как в приложении",
+                "Белая в светлых приложениях, тёмная в тёмных. На рабочем столе — по теме системы", true, false);
         section("Стекло");
         toggle(Glyph.BLUR, TEAL, Prefs.BLUR, "Размытие фона", "Матовое стекло под клавиатурой", true, false);
         slider(Glyph.OPACITY, INDIGO, Prefs.OPACITY, "Плотность панели", 50, 100, "%", prefs.opacity());

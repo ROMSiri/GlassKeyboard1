@@ -276,12 +276,21 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     @Override protected void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
         boolean night = (config.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        if (night != dark) {
-            dark = night;
-            painter.setDark(dark);
-            accent = resolveAccent();
-            invalidate();
-        }
+        if (!followApp) setDark(night);
+    }
+
+    private boolean followApp;
+
+    /** Theme chosen by the service (e.g. to match the app being typed into). */
+    void setDark(boolean d) { setDark(d, true); }
+
+    void setDark(boolean d, boolean fromApp) {
+        followApp = fromApp;
+        if (d == dark) return;
+        dark = d;
+        painter.setDark(dark);
+        accent = resolveAccent();
+        invalidate();
     }
 
     private void relayout() {
@@ -601,6 +610,10 @@ final class KeyboardView extends View implements PanelBlur.Listener {
                 boolean active = k.code == Layouts.SHIFT && shift != SHIFT_OFF;
                 // service keys are darker than letter keys
                 normal = active ? (dark ? 0x40ffffff : 0xd9ffffff) : (dark ? 0x4d000000 : 0x8cb3b8c2);
+                pressed = dark ? 0x3dffffff : 0xb39aa0ab;
+                break;
+            case SPACE: // space is styled like the service keys
+                normal = dark ? 0x4d000000 : 0x8cb3b8c2;
                 pressed = dark ? 0x3dffffff : 0xb39aa0ab;
                 break;
             default:

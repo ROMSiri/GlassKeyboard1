@@ -40,6 +40,8 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
     private static final String SPACE_AFTER = ".,!?;:";
 
     private Prefs prefs;
+    private AppTheme appTheme;
+    private String themePkg;
     private KeyboardView view;
     private PanelBlur blur;
     private long lastSpaceAt;
@@ -83,6 +85,7 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
 
     @Override public void onCreate() {
         super.onCreate();
+        appTheme = new AppTheme(this);
         prefs = new Prefs(this);
         blur = new PanelBlur((mode, detail) -> {
             String name = mode == PanelBlur.Mode.OPLUS ? "системный материал ColorOS"
@@ -115,6 +118,21 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
         view.onBlurModeChanged(blur.mode(), ""); // a recreated view starts without the current mode
     }
 
+    /** Light keyboard in light apps, dark in dark ones; home screen follows the system. */
+    private void applyTheme() {
+        if (view == null) return;
+        boolean d = prefs.appTheme() ? appTheme.isDark(themePkg) : AppTheme.systemDark(this);
+        boolean changed = d != view.isDark();
+        view.setDark(d, prefs.appTheme());
+        if (changed) bindBlur();
+    }
+
+    @Override public void onConfigurationChanged(android.content.res.Configuration config) {
+        super.onConfigurationChanged(config);
+        if (appTheme != null) appTheme.clear();
+        applyTheme();
+    }
+
     @Override public boolean onEvaluateFullscreenMode() {
         return false; // keep the glass panel in landscape too
     }
@@ -122,6 +140,8 @@ public final class GlassKeyboardService extends InputMethodService implements Ke
     @Override public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
         if (view == null) return;
+        themePkg = info.packageName;
+        applyTheme();
         view.resetState();
         int cls = info.inputType & InputType.TYPE_MASK_CLASS;
         view.setSymbolsMode(cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE
