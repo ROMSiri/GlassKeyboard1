@@ -160,6 +160,7 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         sidePad = 3 * dp;
         topPad = 4 * dp;
         keyRadius = 10 * dp;
+        hairline.setStrokeWidth(Math.max(1f, .6f * dp));
         panelRadius = 28 * dp;
         readDimensions();
 
@@ -280,6 +281,8 @@ final class KeyboardView extends View implements PanelBlur.Listener {
     }
 
     private boolean followApp;
+    private final Paint hairline = new Paint(Paint.ANTI_ALIAS_FLAG);
+    { hairline.setStyle(Paint.Style.STROKE); }
 
     /** Theme chosen by the service (e.g. to match the app being typed into). */
     void setDark(boolean d) { setDark(d, true); }
@@ -624,7 +627,18 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         }
         int fill = lerpColor(normal, pressed, p);
         scaled(c.rect, 1f - .045f * p);
-        painter.draw(canvas, tmp, Math.min(keyRadius, tmp.height() / 2f), fill, painter.key, 1f);
+        float rad = Math.min(keyRadius, tmp.height() / 2f);
+        painter.draw(canvas, tmp, rad, fill, painter.key, 1f);
+        // hairline edge on the darker keys so they stand out from the panel
+        boolean darker = dark ? (k.kind == Layouts.Kind.FUNCTION || k.kind == Layouts.Kind.SPACE)
+                : k.kind == Layouts.Kind.CHAR;
+        if (darker && !(k.code == Layouts.SHIFT && shift != SHIFT_OFF)) {
+            float hw = hairline.getStrokeWidth() / 2f;
+            hairline.setColor(dark ? 0x2effffff : 0xb3ffffff);
+            tmp.inset(hw, hw);
+            canvas.drawRoundRect(tmp, rad - hw, rad - hw, hairline);
+            tmp.inset(-hw, -hw);
+        }
         drawKeyContent(canvas, c, tmp, fg);
         return c.pressed || c.upAt != 0;
     }
