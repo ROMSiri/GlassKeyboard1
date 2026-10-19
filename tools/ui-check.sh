@@ -13,6 +13,8 @@ open; shot 01-main 4
 adb shell input swipe 540 1900 540 500 400
 shot 02-main-scrolled 2
 for s in correction toolbar gesture appearance personal tool_keys; do open $s; shot "10-$s" 3; done
+open correction; sleep 2; adb shell input swipe 540 1900 540 700 400; shot 11-correction-scrolled 2
+open appearance; sleep 2; adb shell input swipe 540 2000 540 1200 400; shot 11-appearance-scrolled 2
 
 # our keyboard: the system needs a moment to list a freshly installed IME
 for i in 1 2 3 4 5 6; do

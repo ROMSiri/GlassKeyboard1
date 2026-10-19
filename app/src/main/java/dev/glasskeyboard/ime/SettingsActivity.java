@@ -31,6 +31,7 @@ import android.view.WindowInsetsController;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -65,6 +66,13 @@ public final class SettingsActivity extends Activity {
     private String screen;
     private ScrollView scroll;
     private LinearLayout content;
+    // fixed top: back button + small title (+ pinned preview); content scrolls under it
+    private LinearLayout overlay;
+    private View overlayBg, overlayFade;
+    private TextView smallTitle, bigTitle;
+    private ImageView backButton;
+    private KeyboardPreview preview;
+    private int insetTop, insetBottom;
     private LinearLayout card;          // card rows are added to
     private TextView statusTitle, statusText;
     private LinearLayout statusButtons;
@@ -88,23 +96,43 @@ public final class SettingsActivity extends Activity {
         subColor = dark ? 0xff9a9aa1 : 0xff6e6e73;
         divider = dark ? 0x22ffffff : 0x14000000;
 
+        FrameLayout root = new FrameLayout(this);
         scroll = new ScrollView(this);
-        scroll.setClipToPadding(true); // content scrolls under nothing: clipped below the status bar
+        scroll.setClipToPadding(false);   // content passes under the fixed top bar
         scroll.setFillViewport(true);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(16), dp(12), dp(16), dp(32));
+        content.setPadding(dp(16), dp(4), dp(16), dp(32));
         scroll.addView(content);
-        scroll.setOnApplyWindowInsetsListener((v, insets) -> {
-            int top, bottom;
+        root.addView(scroll, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // top zone: background that fades in when content scrolls under it (darkens in dark
+        // theme, lightens in light theme), a soft edge below it, then the bar itself
+        overlayBg = new View(this);
+        overlayBg.setBackgroundColor((pageBg & 0x00ffffff) | 0xeb000000);
+        overlayBg.setAlpha(0f);
+        root.addView(overlayBg, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0));
+        overlayFade = new View(this);
+        overlayFade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{(pageBg & 0x00ffffff) | 0xeb000000, pageBg & 0x00ffffff}));
+        overlayFade.setAlpha(0f);
+        root.addView(overlayFade, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(28)));
+        overlay = new LinearLayout(this);
+        overlay.setOrientation(LinearLayout.VERTICAL);
+        root.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        overlay.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> placeOverlay());
+
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets i = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
-                top = i.top; bottom = i.bottom;
-            } else { top = insets.getSystemWindowInsetTop(); bottom = insets.getSystemWindowInsetBottom(); }
-            v.setPadding(0, top, 0, bottom);
+                insetTop = i.top; insetBottom = i.bottom;
+            } else { insetTop = insets.getSystemWindowInsetTop(); insetBottom = insets.getSystemWindowInsetBottom(); }
+            overlay.setPadding(0, insetTop, 0, 0);
+            placeOverlay();
             return insets;
         });
-        setContentView(scroll);   // creates the window decor; system bars can be styled after this
+        scroll.setOnScrollChangeListener((v, x, y, ox, oy) -> onScrolled(y));
+        setContentView(root);   // creates the window decor; system bars can be styled after this
         setupWindow();
         build();
     }
@@ -143,6 +171,9 @@ public final class SettingsActivity extends Activity {
     private void build() {
         content.removeAllViews();
         card = null;
+        preview = null;
+        bigTitle = null;
+        buildTopBar();
         switch (screen) {
             case CORRECTION: buildCorrection(); break;
             case TOOLBAR: buildToolbar(); break;
@@ -159,6 +190,69 @@ public final class SettingsActivity extends Activity {
         }
     }
 
+    /** Fixed bar: back button (sub-screens) and a small title that appears when the big one scrolls away. */
+    private void buildTopBar() {
+        overlay.removeAllViews();
+        FrameLayout bar = new FrameLayout(this);
+        smallTitle = text("", 17, textColor, true);
+        smallTitle.setGravity(Gravity.CENTER);
+        smallTitle.setAlpha(0f);
+        smallTitle.setSingleLine(true);
+        smallTitle.setEllipsize(TextUtils.TruncateAt.END);
+        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        tp.leftMargin = tp.rightMargin = dp(68);
+        bar.addView(smallTitle, tp);
+        backButton = null;
+        if (!MAIN.equals(screen)) {
+            ImageView back = new ImageView(this);
+            back.setImageDrawable(lineIcon(1, textColor, true));
+            back.setScaleType(ImageView.ScaleType.CENTER);
+            back.setBackground(ripple(roundRect(cardBg, dp(22))));
+            back.setElevation(dp(2));
+            back.setContentDescription("Назад");
+            back.setOnClickListener(v -> finish());
+            // grows while pressed
+            back.setOnTouchListener((v, e) -> {
+                int a = e.getActionMasked();
+                if (a == android.view.MotionEvent.ACTION_DOWN)
+                    v.animate().scaleX(1.18f).scaleY(1.18f).setDuration(120).start();
+                else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL)
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+                return false;
+            });
+            FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER_VERTICAL | Gravity.START);
+            bp.leftMargin = dp(16);
+            bar.addView(back, bp);
+            backButton = back;
+        }
+        overlay.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(MAIN.equals(screen) ? 48 : 60)));
+    }
+
+    /** Content starts below the fixed zone; the zone's background covers exactly the bar (+ preview). */
+    private void placeOverlay() {
+        int h = overlay.getHeight();
+        if (h <= 0) return;
+        ViewGroup.LayoutParams lp = overlayBg.getLayoutParams();
+        if (lp.height != h) { lp.height = h; overlayBg.setLayoutParams(lp); }
+        overlayFade.setTranslationY(h);
+        if (scroll.getPaddingTop() != h || scroll.getPaddingBottom() != insetBottom)
+            scroll.setPadding(0, h, 0, insetBottom);
+        onScrolled(scroll.getScrollY());
+    }
+
+    private void onScrolled(int y) {
+        float a = preview != null ? 1f : Math.min(1f, y / (float) dp(16));
+        overlayBg.setAlpha(a);
+        overlayFade.setAlpha(Math.min(1f, y / (float) dp(16)));
+        if (smallTitle != null && bigTitle != null) {
+            float start = bigTitle.getBottom() - dp(18);
+            smallTitle.setAlpha(Math.max(0f, Math.min(1f, (y - start) / dp(20))));
+        }
+    }
+
+    /** Settings changed that the preview shows. */
+    private void refreshPreview() { if (preview != null) preview.refresh(); }
+
     /** Rebuild keeping the scroll position (used when a switch shows/hides dependent rows). */
     private void rebuild() {
         int y = scroll.getScrollY();
@@ -170,8 +264,10 @@ public final class SettingsActivity extends Activity {
 
     private void buildMain() {
         TextView title = text("Glass Keyboard", 34, textColor, true);
-        title.setPadding(dp(4), dp(8), 0, 0);
+        title.setPadding(dp(4), 0, 0, 0);
         content.addView(title);
+        bigTitle = title;
+        smallTitle.setText("Glass Keyboard");
         TextView sub = text("Клавиатура со стеклом ColorOS 17", 15, subColor, false);
         sub.setPadding(dp(4), dp(2), 0, dp(14));
         content.addView(sub);
@@ -209,6 +305,10 @@ public final class SettingsActivity extends Activity {
     }
 
     private void buildAppearance() {
+        preview = new KeyboardPreview(this, prefs, dark, accent);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        pp.setMargins(dp(16), dp(2), dp(16), dp(10));
+        overlay.addView(preview, pp);
         header("Внешний вид и отклик");
         section("Стекло");
         toggle(Glyph.BLUR, TEAL, Prefs.BLUR, "Размытие фона", "Матовое стекло под клавиатурой", true, false);
@@ -608,20 +708,13 @@ public final class SettingsActivity extends Activity {
         startActivity(new Intent(this, SettingsActivity.class).putExtra(SCREEN, target));
     }
 
-    /** Sub-screen header: round back button and a large title. */
+    /** Sub-screen title (the back button is in the fixed bar above). */
     private void header(String titleText) {
-        ImageView back = new ImageView(this);
-        back.setImageDrawable(lineIcon(1, textColor, true));
-        back.setScaleType(ImageView.ScaleType.CENTER);
-        back.setBackground(ripple(roundRect(cardBg, dp(22))));
-        back.setOnClickListener(v -> finish());
-        back.setContentDescription("Назад");
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(44), dp(44));
-        bp.topMargin = dp(8);
-        content.addView(back, bp);
         TextView t = text(titleText, 32, textColor, true);
-        t.setPadding(dp(4), dp(14), 0, dp(6));
+        t.setPadding(dp(4), dp(2), 0, dp(6));
         content.addView(t);
+        bigTitle = t;
+        smallTitle.setText(titleText);
     }
 
     /** Starts a new card; {@code caption} above it (may be null). */
@@ -748,6 +841,7 @@ public final class SettingsActivity extends Activity {
         ToggleView t = toggleView(g, color, key, titleText, summary, def);
         t.setListener(on -> {
             prefs.set(key, on);
+            refreshPreview();
             if (rebuildOnChange) content.postDelayed(this::rebuild, 190);
         });
         return prefs.get(key, def);
@@ -791,7 +885,7 @@ public final class SettingsActivity extends Activity {
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar b, int progress, boolean fromUser) {
                 val.setText((progress + min) + unit);
-                if (fromUser) prefs.setInt(key, progress + min);
+                if (fromUser) { prefs.setInt(key, progress + min); refreshPreview(); }
             }
             @Override public void onStartTrackingTouch(SeekBar b) { }
             @Override public void onStopTrackingTouch(SeekBar b) { }
