@@ -1,6 +1,10 @@
 name: UI check on emulator
 on:
   workflow_dispatch:
+    inputs:
+      script:
+        description: test script in tools/
+        default: ui-check.sh
 permissions:
   contents: write
 jobs:
@@ -27,7 +31,7 @@ jobs:
           target: google_apis
           profile: pixel_6
           disable-animations: true
-          script: bash tools/ui-check.sh
+          script: bash tools/${{ inputs.script || 'ui-check.sh' }}
       - name: Publish screenshots to the "screens" branch
         if: always()
         run: |

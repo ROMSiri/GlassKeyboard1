@@ -609,12 +609,14 @@ final class KeyboardView extends View implements PanelBlur.Listener {
             case FUNCTION:
                 boolean active = k.code == Layouts.SHIFT && shift != SHIFT_OFF;
                 // service keys are darker than letter keys
-                normal = active ? (dark ? 0x40ffffff : 0xd9ffffff) : (dark ? 0x4d000000 : 0x8cb3b8c2);
-                pressed = dark ? 0x3dffffff : 0xb39aa0ab;
+                // dark theme: service keys darker than letters; light theme: lighter (whiter)
+                normal = active ? (dark ? 0x40ffffff : ((accent & 0x00ffffff) | 0x47000000))
+                        : (dark ? 0x4d000000 : 0xf2ffffff);
+                pressed = dark ? 0x3dffffff : 0x85bbbec2;
                 break;
             case SPACE: // space is styled like the service keys
-                normal = dark ? 0x4d000000 : 0x8cb3b8c2;
-                pressed = dark ? 0x3dffffff : 0xb39aa0ab;
+                normal = dark ? 0x4d000000 : 0xf2ffffff;
+                pressed = dark ? 0x3dffffff : 0x85bbbec2;
                 break;
             default:
                 normal = dark ? 0x26ffffff : 0x8affffff;

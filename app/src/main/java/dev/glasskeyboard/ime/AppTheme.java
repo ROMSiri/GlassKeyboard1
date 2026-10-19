@@ -12,6 +12,8 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 
+import android.util.Log;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -38,7 +40,10 @@ final class AppTheme {
     boolean isDark(String pkg) {
         boolean sys = systemDark(context);
         if (pkg == null || pkg.isEmpty() || pkg.equals(context.getPackageName())
-                || pkg.equals("android") || pkg.equals("com.android.systemui") || isLauncher(pkg)) return sys;
+                || pkg.equals("android") || pkg.equals("com.android.systemui") || isLauncher(pkg)) {
+            Log.d("GlassKeyboard", "theme " + pkg + " system/launcher -> dark=" + sys);
+            return sys;
+        }
         String key = pkg + (sys ? "#n" : "#d");
         Boolean cached = cache.get(key);
         if (cached != null) return cached;
@@ -47,6 +52,7 @@ final class AppTheme {
             light = lightTheme(pkg);
         } catch (Throwable ignored) { }
         boolean result = light == null ? sys : !light;
+        Log.d("GlassKeyboard", "theme " + pkg + " sysDark=" + sys + " light=" + light + " -> dark=" + result);
         cache.put(key, result);
         return result;
     }
