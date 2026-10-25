@@ -1,0 +1,89 @@
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 2797
+WaitTime: 2887
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 2132
+WaitTime: 2203
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 3357
+WaitTime: 3584
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 2484
+WaitTime: 2679
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 2125
+WaitTime: 2184
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 2248
+WaitTime: 2251
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 2193
+WaitTime: 2195
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 1884
+WaitTime: 1886
+Complete
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 2032
+WaitTime: 2036
+Complete
+Input method dev.glasskeyboard.ime/.GlassKeyboardService: now enabled for user #0
+Input method dev.glasskeyboard.ime/.GlassKeyboardService selected for user #0
+Input method dev.glasskeyboard.ime/.GlassKeyboardService: already enabled for user #0
+Input method dev.glasskeyboard.ime/.GlassKeyboardService selected for user #0
+dev.glasskeyboard.ime/.GlassKeyboardService
+Stopping: dev.glasskeyboard.ime
+Starting: Intent { cmp=dev.glasskeyboard.ime/.SettingsActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: dev.glasskeyboard.ime/.SettingsActivity
+TotalTime: 1732
+WaitTime: 1734
+Complete
+Input method dev.glasskeyboard.ime/.GlassKeyboardService: already enabled for user #0
+Input method dev.glasskeyboard.ime/.GlassKeyboardService selected for user #0
+dev.glasskeyboard.ime/.GlassKeyboardService
+TOP=1502 DOTS=1014,1572
