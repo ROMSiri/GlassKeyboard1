@@ -135,6 +135,7 @@ public final class SettingsActivity extends Activity {
                 new int[]{(pageBg & 0x00ffffff) | 0xeb000000, pageBg & 0x00ffffff}));
         overlayFade.setAlpha(0f);
         root.addView(overlayFade, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(28)));
+        root.backdropColor = pageBg;
         root.sources = 3;                 // scroll + the backgrounds behind the preview: seen through the glass
         overlay = new LinearLayout(this);
         overlay.setOrientation(LinearLayout.VERTICAL);
@@ -151,8 +152,10 @@ public final class SettingsActivity extends Activity {
         Drawable[] icons = new Drawable[tabIcons.length];
         for (int i = 0; i < icons.length; i++) icons[i] = getDrawable(tabIcons[i]).mutate();
         tabs = new TabCapsule(this, dark, TAB_LABELS, icons, tabFor(screen), this::onTab);
-        root.addView(tabs, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        FrameLayout.LayoutParams tabsLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        tabsLp.leftMargin = tabsLp.rightMargin = dp(4);
+        root.addView(tabs, tabsLp);
 
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
@@ -171,7 +174,7 @@ public final class SettingsActivity extends Activity {
                 top.setLayoutParams(lp);
             }
             FrameLayout.LayoutParams tp = (FrameLayout.LayoutParams) tabs.getLayoutParams();
-            tp.bottomMargin = navBottom + dp(20);
+            tp.bottomMargin = navBottom + dp(12);
             tabs.setLayoutParams(tp);
             placeOverlay();
             return insets;
@@ -352,7 +355,7 @@ public final class SettingsActivity extends Activity {
         if (lp.height != h) { lp.height = h; overlayBg.setLayoutParams(lp); }
         overlayFade.setTranslationY(h);
         int top = h + (preview != null ? 0 : dp(4));
-        int bottom = Math.max(insetBottom, navBottom + dp(20) + tabs.fullHeight() + dp(12));
+        int bottom = Math.max(insetBottom, navBottom + dp(12) + tabs.fullHeight() + dp(12));
         if (scroll.getPaddingTop() != top || scroll.getPaddingBottom() != bottom) scroll.setPadding(0, top, 0, bottom);
         onScrolled(scroll.getScrollY());
     }

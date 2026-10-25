@@ -10,8 +10,8 @@ android {
         applicationId = "dev.glasskeyboard.ime"
         minSdk = 29          // blur: Android 12+ (31), AGSL material: Android 13+ (33), fallbacks below
         targetSdk = 35
-        versionCode = 16
-        versionName = "2.4"
+        versionCode = 17
+        versionName = "2.5"
     }
 
     buildTypes {

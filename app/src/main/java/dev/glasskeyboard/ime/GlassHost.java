@@ -14,6 +14,8 @@ import android.widget.FrameLayout;
  */
 final class GlassHost extends FrameLayout {
     int sources;
+    /** Page colour under the content: the blur must not see through to the sharp content below. */
+    int backdropColor;
     private final RenderNode content = Build.VERSION.SDK_INT >= 31 ? new RenderNode("backdrop") : null;
     private RecordingCanvas rec;
     private boolean ready;
@@ -29,6 +31,7 @@ final class GlassHost extends FrameLayout {
         if (i == 0) {
             content.setPosition(0, 0, getWidth(), getHeight());
             rec = content.beginRecording();
+            rec.drawColor(backdropColor);
         }
         boolean more = super.drawChild(rec != null ? rec : c, child, time);
         if (i == sources - 1 && rec != null) {

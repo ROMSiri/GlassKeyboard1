@@ -104,6 +104,7 @@ abstract class GlassView extends View {
             recX = x; recY = y; recW = w; recH = h;
             blurred.setPosition(0, 0, w, h);
             RecordingCanvas rc = blurred.beginRecording();
+            rc.drawColor(host.backdropColor);           // opaque even past the screen edge
             rc.translate(m - x, m - y);
             rc.drawRenderNode(content);
             blurred.endRecording();

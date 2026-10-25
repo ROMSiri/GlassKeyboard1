@@ -15,7 +15,8 @@ import android.view.MotionEvent;
 final class TabCapsule extends GlassView implements Stretchy.Inner {
     interface Listener { void onTab(int index); }
 
-    private static final float ICON = 19, LABEL_LINE = 13, LABEL_SIZE = 10;
+    // a little larger than the mock-up, and stretched across nearly the whole bottom edge
+    private static final float ICON = 24, LABEL_LINE = 15, LABEL_SIZE = 12, SIDE = 12, MAX_W = 520, COMPACT_TAB = 64;
 
     private final String[] labels;
     private final Drawable[] icons;
@@ -24,7 +25,6 @@ final class TabCapsule extends GlassView implements Stretchy.Inner {
     private final Listener listener;
     private final Stretchy stretchy;
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final boolean narrow;
     // size: 0 full .. 1 compact (padding, gaps, min-width); label: height, opacity+blur, shrink
     private final Tween size = new Tween(0), labelH = new Tween(1), labelA = new Tween(1), labelT = new Tween(0);
     private final RectF tmp = new RectF();
@@ -40,7 +40,6 @@ final class TabCapsule extends GlassView implements Stretchy.Inner {
         this.icons = icons;
         this.active = active;
         this.listener = listener;
-        narrow = c.getResources().getConfiguration().screenWidthDp <= 400;
         text.setTextSize(LABEL_SIZE * dp);
         text.setTypeface(weight(500));
         text.setTextAlign(Paint.Align.CENTER);
@@ -83,17 +82,11 @@ final class TabCapsule extends GlassView implements Stretchy.Inner {
     }
 
     /** Height of the full capsule, for content padding. */
-    int fullHeight() { return Math.round((2 * 4 + 2 * 5 + ICON + 2 + LABEL_LINE + 2) * dp); }
-
-    private float fullWidth() {
-        float w = 2 * 4 + 2 + 3 * 2;
-        for (float lw : labelW) w += Math.max(narrow ? 0 : 56, Math.max(ICON, lw) + 16);
-        return w * dp;
-    }
+    int fullHeight() { return Math.round((2 * 5 + 2 + 2 * 9 + ICON + 3 + LABEL_LINE) * dp); }
 
     @Override protected void onMeasure(int wSpec, int hSpec) {
-        // the view keeps the full size (+ room for the spring's overshoot); the capsule is drawn inside
-        setMeasuredDimension(Math.round(fullWidth() + 12 * dp), fullHeight() + Math.round(4 * dp));
+        // the view spans the width (+ room for the spring's overshoot); the capsule is drawn inside
+        setMeasuredDimension(getDefaultSize(getSuggestedMinimumWidth(), wSpec), fullHeight() + Math.round(4 * dp));
     }
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
@@ -104,19 +97,20 @@ final class TabCapsule extends GlassView implements Stretchy.Inner {
     // ---- geometry (dp, from the current animation values)
 
     private float s() { return size.value(); }
-    private float pad() { return Tween.lerp(4, 3, s()); }
+    private float pad() { return Tween.lerp(5, 4, s()); }
     private float gap() { return Tween.lerp(2, 0, s()); }
+    /** Full: tabs share the whole width equally. Compact: shrinks to the icons. */
     private float tabW(int i) {
-        float s = s();
-        return Math.max(Tween.lerp(narrow ? 0 : 56, 34, s), Math.max(ICON, labelW[i]) + 2 * Tween.lerp(8, 6, s));
+        float avail = Math.min(MAX_W, getWidth() / dp - 2 * SIDE);
+        float full = (avail - 2 * 5 - 2 - (labels.length - 1) * 2) / labels.length;
+        return Tween.lerp(Math.max(full, Math.max(ICON, labelW[i]) + 12), COMPACT_TAB, s());
     }
     private float tabH() {
-        float s = s();
-        return 2 * Tween.lerp(5, 7, s) + ICON + Tween.lerp(2, 0, s) + LABEL_LINE * labelH.value();
+        return 2 * 9 + ICON + Tween.lerp(3, 0, s()) + LABEL_LINE * labelH.value();
     }
 
     @Override float shape(RectF out) {
-        float w = 2 * pad() + 2 + 3 * gap();
+        float w = 2 * pad() + 2 + (labels.length - 1) * gap();
         for (int i = 0; i < labels.length; i++) w += tabW(i);
         float h = 2 * pad() + 2 + tabH();
         float cx = getWidth() / 2f;
@@ -141,7 +135,7 @@ final class TabCapsule extends GlassView implements Stretchy.Inner {
     @Override void drawContent(Canvas c) {
         RectF r = tmp;
         shape(r);
-        float s = s(), padV = Tween.lerp(5, 7, s), tgap = Tween.lerp(2, 0, s);
+        float padV = 9, tgap = Tween.lerp(3, 0, s());
         float a = labelA.value(), t = labelT.value();
         float top = r.top + (1 + pad()) * dp;
         float left = r.left + (1 + pad()) * dp;
