@@ -54,7 +54,14 @@ public final class SettingsActivity extends Activity {
     static final String SCREEN = "screen";
     private static final String MAIN = "main", CORRECTION = "correction", TOOLBAR = "toolbar",
             GESTURE = "gesture", PERSONAL = "personal", TOOL_KEYS = "tool_keys", PINNED = "pinned",
-            CUSTOM_CODES = "custom_codes", PUNCTUATION = "punctuation", APPEARANCE = "appearance";
+            CUSTOM_CODES = "custom_codes", PUNCTUATION = "punctuation", APPEARANCE = "appearance",
+            SETTINGS = "settings";
+    // bottom capsule: these screens are tabs of one activity, the rest open on top of it
+    private static final String[] TABS = {MAIN, APPEARANCE, SETTINGS, PERSONAL};
+    private static final String[] TAB_LABELS = {"Главная", "Темы", "Настройки", "Словарь"};
+    private static final String[] MENU = {"Сменить клавиатуру", "Клавиатуры Android", "Сбросить настройки", "О приложении"};
+    private static int liveTabActivities;
+    private static String pendingTab;   // tab picked on a sub-screen: screens above the tabs close
     private static final int REQ_CONTACTS = 7;
 
     // icon tile colours
@@ -66,13 +73,20 @@ public final class SettingsActivity extends Activity {
     private String screen;
     private ScrollView scroll;
     private LinearLayout content;
-    // fixed top: back button + small title (+ pinned preview); content scrolls under it
+    // glass chrome from the mock-up: title capsule, round back / menu buttons, bottom tab capsule;
+    // content scrolls under it. The overlay holds the pinned preview on the "Темы" tab.
+    private GlassHost root;
     private LinearLayout overlay;
     private View overlayBg, overlayFade;
-    private TextView smallTitle, bigTitle;
-    private ImageView backButton;
+    private TitleCapsule titleCapsule;
+    private RoundButton backButton, menuButton;
+    private TabCapsule tabs;
+    private GlassMenu menu;
+    private View menuScrim;
+    private boolean tabActivity, titled;
+    private int lastScrollY;
     private KeyboardPreview preview;
-    private int insetTop, insetBottom;
+    private int insetTop, insetBottom, navBottom;
     private LinearLayout card;          // card rows are added to
     private TextView statusTitle, statusText;
     private LinearLayout statusButtons;
@@ -84,7 +98,11 @@ public final class SettingsActivity extends Activity {
         prefs = new Prefs(this);
         screen = getIntent().getStringExtra(SCREEN);
         if (screen == null) screen = MAIN;
-        dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        tabActivity = tabIndex(screen) >= 0;
+        if (tabActivity) liveTabActivities++;
+        int theme = prefs.settingsTheme();
+        dark = theme == 2 || theme == 0
+                && (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         accent = 0xff3478f6;
         if (Build.VERSION.SDK_INT >= 31) {
             try { accent = getColor(dark ? android.R.color.system_accent1_300 : android.R.color.system_accent1_600); }
@@ -96,7 +114,7 @@ public final class SettingsActivity extends Activity {
         subColor = dark ? 0xff9a9aa1 : 0xff6e6e73;
         divider = dark ? 0x22ffffff : 0x14000000;
 
-        FrameLayout root = new FrameLayout(this);
+        root = new GlassHost(this);
         scroll = new ScrollView(this);
         scroll.setClipToPadding(false);   // content passes under the fixed top bar
         scroll.setFillViewport(true);
@@ -117,17 +135,44 @@ public final class SettingsActivity extends Activity {
                 new int[]{(pageBg & 0x00ffffff) | 0xeb000000, pageBg & 0x00ffffff}));
         overlayFade.setAlpha(0f);
         root.addView(overlayFade, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(28)));
+        root.sources = 3;                 // scroll + the backgrounds behind the preview: seen through the glass
         overlay = new LinearLayout(this);
         overlay.setOrientation(LinearLayout.VERTICAL);
         root.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         overlay.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> placeOverlay());
 
+        titleCapsule = new TitleCapsule(this, dark);
+        root.addView(titleCapsule, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP));
+        backButton = new RoundButton(this, dark, getDrawable(R.drawable.ic_round_back).mutate(), "Назад", this::goBack);
+        root.addView(backButton, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.START));
+        menuButton = new RoundButton(this, dark, getDrawable(R.drawable.ic_round_menu).mutate(), "Меню", this::toggleMenu);
+        root.addView(menuButton, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.END));
+        int[] tabIcons = {R.drawable.ic_tab_home, R.drawable.ic_tab_themes, R.drawable.ic_tab_settings, R.drawable.ic_tab_dict};
+        Drawable[] icons = new Drawable[tabIcons.length];
+        for (int i = 0; i < icons.length; i++) icons[i] = getDrawable(tabIcons[i]).mutate();
+        tabs = new TabCapsule(this, dark, TAB_LABELS, icons, tabFor(screen), this::onTab);
+        root.addView(tabs, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets i = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
                 insetTop = i.top; insetBottom = i.bottom;
-            } else { insetTop = insets.getSystemWindowInsetTop(); insetBottom = insets.getSystemWindowInsetBottom(); }
-            overlay.setPadding(0, insetTop, 0, 0);
+                navBottom = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
+            } else {
+                insetTop = insets.getSystemWindowInsetTop(); insetBottom = insets.getSystemWindowInsetBottom();
+                navBottom = insets.getStableInsetBottom();
+            }
+            overlay.setPadding(0, insetTop + dp(16 + 48 + 8), 0, 0);
+            for (View top : new View[]{titleCapsule, backButton, menuButton}) {
+                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) top.getLayoutParams();
+                lp.topMargin = insetTop + dp(16);
+                if (top != titleCapsule) lp.leftMargin = lp.rightMargin = dp(16);
+                top.setLayoutParams(lp);
+            }
+            FrameLayout.LayoutParams tp = (FrameLayout.LayoutParams) tabs.getLayoutParams();
+            tp.bottomMargin = navBottom + dp(20);
+            tabs.setLayoutParams(tp);
             placeOverlay();
             return insets;
         });
@@ -160,7 +205,115 @@ public final class SettingsActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (pendingTab != null) {
+            if (!tabActivity) { finish(); return; }
+            String t = pendingTab;
+            pendingTab = null;
+            switchTab(t);
+        }
         if (MAIN.equals(screen)) updateStatus();
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        if (tabActivity) liveTabActivities--;
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override public void onBackPressed() {
+        if (menu != null) closeMenu(null);
+        else goBack();
+    }
+
+    // ------------------------------------------------------------------ glass chrome
+
+    private static int tabIndex(String s) {
+        for (int i = 0; i < TABS.length; i++) if (TABS[i].equals(s)) return i;
+        return -1;
+    }
+
+    /** Tab lit for a screen: sub-screens belong to "Настройки". */
+    private static int tabFor(String s) {
+        int i = tabIndex(s);
+        return i >= 0 ? i : 2;
+    }
+
+    /** Back: on a tab other than the first goes to the first one, otherwise closes the screen. */
+    private void goBack() {
+        if (tabActivity && !MAIN.equals(screen)) switchTab(MAIN);
+        else finish();
+    }
+
+    private void onTab(int i) {
+        if (tabActivity) { switchTab(TABS[i]); return; }
+        if (liveTabActivities == 0) startActivity(new Intent(this, SettingsActivity.class).putExtra(SCREEN, TABS[i]));
+        else pendingTab = TABS[i];
+        finish();
+    }
+
+    private void switchTab(String target) {
+        tabs.setActive(tabFor(target));
+        if (target.equals(screen)) { scroll.smoothScrollTo(0, 0); return; }
+        closeMenu(null);
+        screen = target;
+        build();
+        scroll.scrollTo(0, 0);
+        lastScrollY = 0;
+        tabs.setCompact(false);
+        if (MAIN.equals(screen)) updateStatus();
+    }
+
+    private void setTitleText(String t) {
+        titleCapsule.setTitle(t, !titled);
+        titled = true;
+    }
+
+    private void toggleMenu() {
+        if (menu != null) { closeMenu(null); return; }
+        menuScrim = new View(this);
+        menuScrim.setOnClickListener(v -> closeMenu(null));
+        root.addView(menuScrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        menu = new GlassMenu(this, dark, MENU, i -> closeMenu(() -> onMenu(i)));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+        lp.topMargin = insetTop + dp(16 + 48 + 8);
+        lp.rightMargin = dp(16);
+        root.addView(menu, lp);
+    }
+
+    private void closeMenu(Runnable then) {
+        if (menu == null) { if (then != null) then.run(); return; }
+        GlassMenu m = menu;
+        View scrim = menuScrim;
+        menu = null;
+        menuScrim = null;
+        root.removeView(scrim);
+        m.close(() -> root.removeView(m));
+        if (then != null) then.run();
+    }
+
+    private void onMenu(int i) {
+        switch (i) {
+            case 0: pickIme(); break;
+            case 1: startActivity(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)); break;
+            case 2: new AlertDialog.Builder(this)
+                    .setMessage("Вернуть все настройки клавиатуры по умолчанию? Личный словарь останется.")
+                    .setPositiveButton("Сбросить", (d, x) -> {
+                        prefs.sp.edit().clear().apply();
+                        bumpWords();
+                        recreate();
+                    })
+                    .setNegativeButton("Отмена", null).show(); break;
+            default: {
+                String version = "";
+                try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+                catch (PackageManager.NameNotFoundException ignored) { }
+                new AlertDialog.Builder(this)
+                        .setTitle("Glass Keyboard " + version)
+                        .setMessage("Клавиатура со стеклом ColorOS 17.")
+                        .setPositiveButton("OK", null).show();
+            }
+        }
     }
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
@@ -170,11 +323,12 @@ public final class SettingsActivity extends Activity {
 
     private void build() {
         content.removeAllViews();
+        overlay.removeAllViews();
         card = null;
         preview = null;
-        bigTitle = null;
-        buildTopBar();
+        if (tabActivity) setTitleText(TAB_LABELS[tabFor(screen)]);
         switch (screen) {
+            case SETTINGS: buildSettings(); break;
             case CORRECTION: buildCorrection(); break;
             case TOOLBAR: buildToolbar(); break;
             case GESTURE: buildGesture(); break;
@@ -190,44 +344,6 @@ public final class SettingsActivity extends Activity {
         }
     }
 
-    /** Fixed bar: back button (sub-screens) and a small title that appears when the big one scrolls away. */
-    private void buildTopBar() {
-        overlay.removeAllViews();
-        FrameLayout bar = new FrameLayout(this);
-        smallTitle = text("", 17, textColor, true);
-        smallTitle.setGravity(Gravity.CENTER);
-        smallTitle.setAlpha(0f);
-        smallTitle.setSingleLine(true);
-        smallTitle.setEllipsize(TextUtils.TruncateAt.END);
-        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        tp.leftMargin = tp.rightMargin = dp(68);
-        bar.addView(smallTitle, tp);
-        backButton = null;
-        if (!MAIN.equals(screen)) {
-            ImageView back = new ImageView(this);
-            back.setImageDrawable(lineIcon(1, textColor, true));
-            back.setScaleType(ImageView.ScaleType.CENTER);
-            back.setBackground(ripple(roundRect(cardBg, dp(22))));
-            back.setElevation(dp(2));
-            back.setContentDescription("Назад");
-            back.setOnClickListener(v -> finish());
-            // grows while pressed
-            back.setOnTouchListener((v, e) -> {
-                int a = e.getActionMasked();
-                if (a == android.view.MotionEvent.ACTION_DOWN)
-                    v.animate().scaleX(1.18f).scaleY(1.18f).setDuration(120).start();
-                else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL)
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
-                return false;
-            });
-            FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER_VERTICAL | Gravity.START);
-            bp.leftMargin = dp(16);
-            bar.addView(back, bp);
-            backButton = back;
-        }
-        overlay.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(MAIN.equals(screen) ? 48 : 60)));
-    }
-
     /** Content starts below the fixed zone; the zone's background covers exactly the bar (+ preview). */
     private void placeOverlay() {
         int h = overlay.getHeight();
@@ -235,19 +351,22 @@ public final class SettingsActivity extends Activity {
         ViewGroup.LayoutParams lp = overlayBg.getLayoutParams();
         if (lp.height != h) { lp.height = h; overlayBg.setLayoutParams(lp); }
         overlayFade.setTranslationY(h);
-        if (scroll.getPaddingTop() != h || scroll.getPaddingBottom() != insetBottom)
-            scroll.setPadding(0, h, 0, insetBottom);
+        int top = h + (preview != null ? 0 : dp(4));
+        int bottom = Math.max(insetBottom, navBottom + dp(20) + tabs.fullHeight() + dp(12));
+        if (scroll.getPaddingTop() != top || scroll.getPaddingBottom() != bottom) scroll.setPadding(0, top, 0, bottom);
         onScrolled(scroll.getScrollY());
     }
 
     private void onScrolled(int y) {
-        float a = preview != null ? 1f : Math.min(1f, y / (float) dp(16));
-        overlayBg.setAlpha(a);
-        overlayFade.setAlpha(Math.min(1f, y / (float) dp(16)));
-        if (smallTitle != null && bigTitle != null) {
-            float start = bigTitle.getBottom() - dp(18);
-            smallTitle.setAlpha(Math.max(0f, Math.min(1f, (y - start) / dp(20))));
-        }
+        // only the pinned preview gets a solid zone; elsewhere the content shows through the glass
+        overlayBg.setAlpha(preview != null ? 1f : 0f);
+        overlayFade.setAlpha(preview != null ? Math.min(1f, y / (float) dp(16)) : 0f);
+        // bottom capsule: compact while scrolling down, full near the top and when scrolling up
+        int d = y - lastScrollY;
+        if (y < dp(10)) tabs.setCompact(false);
+        else if (d > dp(6)) tabs.setCompact(true);
+        else if (d < -dp(6)) tabs.setCompact(false);
+        if (Math.abs(d) > dp(6)) lastScrollY = y;
     }
 
     /** Settings changed that the preview shows. */
@@ -266,8 +385,6 @@ public final class SettingsActivity extends Activity {
         TextView title = text("Glass Keyboard", 34, textColor, true);
         title.setPadding(dp(4), 0, 0, 0);
         content.addView(title);
-        bigTitle = title;
-        smallTitle.setText("Glass Keyboard");
         TextView sub = text("Клавиатура со стеклом ColorOS 17", 15, subColor, false);
         sub.setPadding(dp(4), dp(2), 0, dp(14));
         content.addView(sub);
@@ -289,13 +406,6 @@ public final class SettingsActivity extends Activity {
         sp.topMargin = dp(14);
         content.addView(status, sp);
 
-        section("Настройки");
-        nav(Glyph.CORRECTION, BLUE, "Исправление текста", "Автоисправление, подсказки, эмодзи", () -> open(CORRECTION));
-        nav(Glyph.TOOLBAR, ORANGE, "Панель инструментов", "Режим, клавиши, закреплённые", () -> open(TOOLBAR));
-        nav(Glyph.GESTURE, PURPLE, "Непрерывный ввод", "Набор слов жестами", () -> open(GESTURE));
-        nav(Glyph.BLUR, TEAL, "Внешний вид и отклик", "Стекло, высота, вибрация, звук", () -> open(APPEARANCE));
-        nav(Glyph.BOOK, GREEN, "Личный словарь", "Выученные и добавленные слова", () -> open(PERSONAL));
-
         section("Проверка");
         EditText test = field("Попробуйте клавиатуру здесь", 3);
         card.addView(test, fieldParams());
@@ -309,10 +419,20 @@ public final class SettingsActivity extends Activity {
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         pp.setMargins(dp(16), dp(2), dp(16), dp(10));
         overlay.addView(preview, pp);
-        header("Внешний вид и отклик");
-        section("Тема");
+        header("Темы");
+        section("Клавиатура");
         toggle(Glyph.OPACITY, PURPLE, Prefs.APP_THEME, "Как в приложении",
                 "Белая в светлых приложениях, тёмная в тёмных. На рабочем столе — по теме системы", true, false);
+        String[] themes = {"Как в системе", "Светлая", "Тёмная"};
+        int theme = Math.max(0, Math.min(2, prefs.settingsTheme()));
+        link(Glyph.BLUR, INDIGO, "Тема настроек", themes[theme], () -> new AlertDialog.Builder(this)
+                .setTitle("Тема настроек")
+                .setSingleChoiceItems(themes, theme, (d, which) -> {
+                    d.dismiss();
+                    if (which == theme) return;
+                    prefs.setInt(Prefs.SETTINGS_THEME, which);
+                    recreate();
+                }).show());
         section("Стекло");
         toggle(Glyph.BLUR, TEAL, Prefs.BLUR, "Размытие фона", "Матовое стекло под клавиатурой", true, false);
         slider(Glyph.OPACITY, INDIGO, Prefs.OPACITY, "Плотность панели", 50, 100, "%", prefs.opacity());
@@ -323,11 +443,33 @@ public final class SettingsActivity extends Activity {
         section("Размер");
         slider(Glyph.HEIGHT, BLUE, Prefs.KEY_HEIGHT, "Высота клавиш", 70, 140, "%", prefs.keyHeight());
         slider(Glyph.OFFSET, MINT, Prefs.BOTTOM_OFFSET, "Отступ снизу", 0, 48, " dp", prefs.bottomOffset());
+    }
+
+    private void buildSettings() {
+        section("Ввод");
+        nav(Glyph.CORRECTION, BLUE, "Исправление текста", "Автоисправление, подсказки, эмодзи", () -> open(CORRECTION));
+        nav(Glyph.GESTURE, PURPLE, "Непрерывный ввод", "Набор слов жестами", () -> open(GESTURE));
+        nav(Glyph.TOOLBAR, ORANGE, "Панель инструментов", "Режим, клавиши, закреплённые", () -> open(TOOLBAR));
+
+        section("Клавиатура");
+        String[] langs = {"ru", "en"}, langNames = {"Русский", "English"};
+        int lang = "en".equals(prefs.language()) ? 1 : 0;
+        link(Glyph.WEB, TEAL, "Язык раскладки", langNames[lang], () -> new AlertDialog.Builder(this)
+                .setTitle("Язык раскладки")
+                .setSingleChoiceItems(langNames, lang, (d, which) -> {
+                    prefs.setLanguage(langs[which]);
+                    d.dismiss();
+                    rebuild();
+                }).show());
+        choice(Glyph.KEYBOARD, INDIGO, Prefs.ONE_HANDED, "Режим одной руки",
+                new String[]{"Выключен", "Справа", "Слева"}, prefs.oneHanded());
+        toggle(Glyph.SHIELD, GRAY, Prefs.INCOGNITO, "Инкогнито", "Не запоминать новые слова", false, false);
 
         section("Отклик");
         toggle(Glyph.PREVIEW, ORANGE, Prefs.PREVIEW, "Увеличение при нажатии", "Буква всплывает над клавишей", true, false);
         toggle(Glyph.VIBRATE, PINK, Prefs.VIBRATE, "Вибрация", null, true, false);
         toggle(Glyph.SOUND, GRAY, Prefs.SOUND, "Звук нажатий", null, false, false);
+        footnote("Темы и стекло — во вкладке «Темы», выученные слова — в «Словаре».");
     }
 
     private void buildCorrection() {
@@ -711,13 +853,9 @@ public final class SettingsActivity extends Activity {
         startActivity(new Intent(this, SettingsActivity.class).putExtra(SCREEN, target));
     }
 
-    /** Sub-screen title (the back button is in the fixed bar above). */
+    /** Screen title, shown in the top glass capsule (tabs show the tab name). */
     private void header(String titleText) {
-        TextView t = text(titleText, 32, textColor, true);
-        t.setPadding(dp(4), dp(2), 0, dp(6));
-        content.addView(t);
-        bigTitle = t;
-        smallTitle.setText(titleText);
+        if (!tabActivity) setTitleText(titleText);
     }
 
     /** Starts a new card; {@code caption} above it (may be null). */

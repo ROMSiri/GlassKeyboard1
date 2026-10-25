@@ -9,7 +9,7 @@ final class Prefs {
     static final String VIBRATE = "vibrate", SOUND = "sound", PREVIEW = "preview", BLUR = "blur", APP_THEME = "app_theme",
             OPACITY = "panel_opacity", BOTTOM_OFFSET = "bottom_offset", KEY_HEIGHT = "key_height",
             ONE_HANDED = "one_handed", LANGUAGE = "language", BLUR_STATUS = "blur_status",
-            USER_DICT_REV = "user_dict_rev";
+            USER_DICT_REV = "user_dict_rev", SETTINGS_THEME = "settings_theme";
     // text correction
     static final String BLOCK_OFFENSIVE = "block_offensive", AUTOCORRECT = "autocorrect",
             MORE_AUTOCORRECT = "more_autocorrect", AUTOCORRECT_SHORTCUTS = "autocorrect_shortcuts",
@@ -68,6 +68,8 @@ final class Prefs {
         return v == null ? null : "dark".equals(v);
     }
     void setThemeFor(String pkg, boolean dark) { if (pkg != null) setString("theme_app_" + pkg, dark ? "dark" : "light"); }
+    /** Theme of the settings screens: 0 system, 1 light, 2 dark. */
+    int settingsTheme() { return getInt(SETTINGS_THEME, 0); }
     int opacity() { return getInt(OPACITY, 90); }
     int bottomOffset() { return getInt(BOTTOM_OFFSET, 14); }
     int keyHeight() { return getInt(KEY_HEIGHT, 100); }          // percent
