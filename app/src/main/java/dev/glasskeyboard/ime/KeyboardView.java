@@ -611,14 +611,14 @@ final class KeyboardView extends View implements PanelBlur.Listener {
                 break;
             case FUNCTION:
                 boolean active = k.code == Layouts.SHIFT && shift != SHIFT_OFF;
-                // service keys are darker than letter keys
-                // dark theme: service keys darker than letters; light theme: lighter (whiter)
+                // dark theme: service keys a bit dimmer than letters but lighter than the panel;
+                // light theme: lighter (whiter) than letters
                 normal = active ? (dark ? 0x40ffffff : ((accent & 0x00ffffff) | 0x47000000))
-                        : (dark ? 0x4d000000 : 0xf2ffffff);
+                        : (dark ? 0x17ffffff : 0xf2ffffff);
                 pressed = dark ? 0x3dffffff : 0x85bbbec2;
                 break;
             case SPACE: // space is styled like the service keys
-                normal = dark ? 0x4d000000 : 0xf2ffffff;
+                normal = dark ? 0x17ffffff : 0xf2ffffff;
                 pressed = dark ? 0x3dffffff : 0x85bbbec2;
                 break;
             default:
@@ -629,12 +629,10 @@ final class KeyboardView extends View implements PanelBlur.Listener {
         scaled(c.rect, 1f - .045f * p);
         float rad = Math.min(keyRadius, tmp.height() / 2f);
         painter.draw(canvas, tmp, rad, fill, painter.key, 1f);
-        // hairline edge on the darker keys so they stand out from the panel
-        boolean darker = dark ? (k.kind == Layouts.Kind.FUNCTION || k.kind == Layouts.Kind.SPACE)
-                : k.kind == Layouts.Kind.CHAR;
-        if (darker && !(k.code == Layouts.SHIFT && shift != SHIFT_OFF)) {
+        // hairline edge on the letter keys in light theme so they stand out from the panel
+        if (!dark && k.kind == Layouts.Kind.CHAR) {
             float hw = hairline.getStrokeWidth() / 2f;
-            hairline.setColor(dark ? 0x2effffff : 0xb3ffffff);
+            hairline.setColor(0xb3ffffff);
             tmp.inset(hw, hw);
             canvas.drawRoundRect(tmp, rad - hw, rad - hw, hairline);
             tmp.inset(-hw, -hw);
